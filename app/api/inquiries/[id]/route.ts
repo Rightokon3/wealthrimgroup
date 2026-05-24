@@ -11,10 +11,10 @@ const supabase = createClient(
 // Body: { status: 'pending' | 'responded' | 'closed' }
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await req.json();
 
     const validStatuses = ['pending', 'responded', 'closed'];
@@ -52,10 +52,10 @@ export async function PATCH(
 // Hard delete an inquiry (vendor cleanup)
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     const { error } = await supabase
       .from('inquiries')

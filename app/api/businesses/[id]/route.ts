@@ -10,10 +10,10 @@ const supabase = createClient(
 // Returns a single business with its products, properties, and reviews
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // Fetch business
     const { data: business, error: bizError } = await supabase
@@ -69,10 +69,10 @@ export async function GET(
 // Restricted fields (rating, total_reviews, is_verified) cannot be set here
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await req.json();
 
     // Strip fields that should not be client-editable
@@ -115,10 +115,10 @@ export async function PATCH(
 // Hard delete: pass ?hard=true (cascades to products, properties, inquiries, reviews)
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const hard = new URL(req.url).searchParams.get('hard') === 'true';
 
     if (hard) {
