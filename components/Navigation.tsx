@@ -5,6 +5,8 @@ import { motion, useScroll, useTransform } from 'framer-motion';
 import { Menu, X, ShoppingCart, PlusCircle, MapPin } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import Logo from '@/public/image/Drovo-logo-2.png'
+import Image from 'next/image';
 
 const navItems = [
   { name: 'Home', href: '/' },
@@ -44,16 +46,16 @@ export default function Navigation() {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-3 group">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+              {/* <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
                 <ShoppingCart className="w-5 h-5 text-white" />
-              </div>
+              </div> */}
               <div>
                 <div className="font-bold text-xl leading-none tracking-tight text-gray-900">
-                  Afri<span className="text-orange-500">Cart</span>
+                  <Image src={Logo} alt="Drovo Logo" className="h-[100px] w-[100px] object-contain" />
                 </div>
-                <div className="text-[9px] text-gray-400 font-medium tracking-widest uppercase -mt-0.5">
+                {/* <div className="text-[9px] text-gray-400 font-medium tracking-widest uppercase -mt-0.5">
                   LOCAL DELIVERY
-                </div>
+                </div> */}
               </div>
             </Link>
 

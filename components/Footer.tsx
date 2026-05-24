@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { Mail, Phone, MapPin, ShoppingCart } from 'lucide-react';
+import Logo from '@/public/image/Drovo-logo-white.png'
+import Image from 'next/image';
 
 export default function Footer() {
   return (
@@ -11,16 +13,16 @@ export default function Footer() {
           {/* Brand */}
           <div>
             <div className="flex items-center gap-2.5 mb-5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-lg">
+              {/* <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-lg">
                 <ShoppingCart className="w-5 h-5 text-white" />
-              </div>
+              </div> */}
               <div>
                 <div className="font-bold text-lg leading-none">
-                  Afri<span className="text-orange-400">Cart</span>
+                  <Image src={Logo} alt="Drovo Logo" className="h-[30px] w-auto object-contain" />
                 </div>
-                <div className="text-[9px] text-gray-500 font-medium tracking-widest uppercase mt-0.5">
+                {/* <div className="text-[9px] text-gray-500 font-medium tracking-widest uppercase mt-0.5">
                   LOCAL DELIVERY
-                </div>
+                </div> */}
               </div>
             </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-5">
