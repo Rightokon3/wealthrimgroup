@@ -60,6 +60,7 @@ export default function ListBusinessPage() {
   const [step, setStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [coverImage, setCoverImage] = useState<File | null>(null);
   const [galleryImages, setGalleryImages] = useState<File[]>([]);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
@@ -87,16 +88,39 @@ export default function ListBusinessPage() {
     setGalleryPreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
-  async function uploadImage(file: File, path: string) {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}.${fileExt}`;
-    const filePath = `${path}/${fileName}`;
+  async function uploadImage(file: File, folder: 'covers' | 'gallery'): Promise<string> {
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      throw new Error(`Invalid file type: ${file.type}. Please upload a JPG, PNG, or WebP image.`);
+    }
+
+    // Validate file size (max 5 MB)
+    const MAX_BYTES = 5 * 1024 * 1024;
+    if (file.size > MAX_BYTES) {
+      throw new Error(`${file.name} is too large. Maximum size is 5 MB.`);
+    }
+
+    const fileExt = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
+    // Unique path: covers/1234567890-randomhex.jpg
+    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
+    const filePath = `${folder}/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
       .from('business-images')
-      .upload(filePath, file);
+      .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
-    if (uploadError) throw uploadError;
+    if (uploadError) {
+      // Surface a helpful message instead of the raw Supabase error
+      if (uploadError.message.toLowerCase().includes('bucket not found')) {
+        throw new Error(
+          'Storage bucket "business-images" not found. ' +
+          'Please create it in your Supabase dashboard under Storage, ' +
+          'set it to Public, then try again.'
+        );
+      }
+      throw new Error(`Upload failed: ${uploadError.message}`);
+    }
 
     const { data: { publicUrl } } = supabase.storage
       .from('business-images')
@@ -112,15 +136,19 @@ export default function ListBusinessPage() {
       let coverUrl = '';
       const galleryUrls: string[] = [];
 
-      if (coverImage) coverUrl = await uploadImage(coverImage, 'covers');
+      // Only attempt uploads if files were selected
+      if (coverImage) {
+        coverUrl = await uploadImage(coverImage, 'covers');
+      }
       for (const image of galleryImages) {
-        galleryUrls.push(await uploadImage(image, 'gallery'));
+        const url = await uploadImage(image, 'gallery');
+        galleryUrls.push(url);
       }
 
       const { error } = await supabase.from('businesses').insert([
         {
           ...data,
-          cover_image_url: coverUrl,
+          cover_image_url: coverUrl || null,
           gallery_images: galleryUrls,
           is_active: true,
           rating: 0,
@@ -135,8 +163,9 @@ export default function ListBusinessPage() {
         window.location.href = '/';
       }, 3500);
     } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+      setSubmitError(msg);
       console.error('Error submitting form:', error);
-      alert('There was an error submitting your business. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -573,10 +602,19 @@ export default function ListBusinessPage() {
                   <p className="text-xs text-gray-400 mt-2">Upload up to 10 images</p>
                 </div>
 
+                {submitError && (
+                  <div className="mb-4 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3">
+                    <span className="text-red-500 text-lg leading-none mt-0.5">⚠</span>
+                    <div>
+                      <p className="text-red-700 font-bold text-sm mb-0.5">Submission failed</p>
+                      <p className="text-red-600 text-sm">{submitError}</p>
+                    </div>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <button
                     type="button"
-                    onClick={() => setStep(2)}
+                    onClick={() => { setStep(2); setSubmitError(''); }}
                     className="px-6 py-3 rounded-xl font-bold text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 transition-all"
                   >
                     ← Back
