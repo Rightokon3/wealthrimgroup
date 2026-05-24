@@ -3,22 +3,21 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 // ─── GET /api/reviews ─────────────────────────────────────────────────────
-// Query params:
-//   business_id = UUID (required)
-//   limit       = number (default 10)
-//   page        = number (default 1)
 export async function GET(req: NextRequest) {
   try {
+    const supabase = getClient();
     const { searchParams } = new URL(req.url);
     const business_id = searchParams.get('business_id');
-    const limit = parseInt(searchParams.get('limit') || '10');
-    const page  = parseInt(searchParams.get('page')  || '1');
+    const limit  = parseInt(searchParams.get('limit') || '10');
+    const page   = parseInt(searchParams.get('page')  || '1');
     const offset = (page - 1) * limit;
 
     if (!business_id) {
@@ -36,7 +35,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Rating breakdown (1–5 star counts)
     const breakdown = [1, 2, 3, 4, 5].map(star => ({
       star,
       count: data?.filter(r => r.rating === star).length ?? 0,
@@ -53,13 +51,11 @@ export async function GET(req: NextRequest) {
 }
 
 // ─── POST /api/reviews ────────────────────────────────────────────────────
-// Body: { business_id, customer_name, rating, comment }
-// After inserting, recalculates and updates the business rating + total_reviews
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getClient();
     const body = await req.json();
 
-    // Validate
     const required = ['business_id', 'customer_name', 'rating'];
     const missing = required.filter(f => !body[f]);
     if (missing.length > 0) {
@@ -71,7 +67,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'rating must be an integer between 1 and 5' }, { status: 400 });
     }
 
-    // Insert review
     const { data: review, error: reviewError } = await supabase
       .from('reviews')
       .insert([{
@@ -88,21 +83,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: reviewError.message }, { status: 500 });
     }
 
-    // ── Recalculate aggregate rating on the business ──────────────────────
-    const { data: allReviews, error: aggError } = await supabase
+    // Recalculate aggregate rating
+    const { data: allReviews } = await supabase
       .from('reviews')
       .select('rating')
       .eq('business_id', body.business_id);
 
-    if (!aggError && allReviews && allReviews.length > 0) {
+    if (allReviews && allReviews.length > 0) {
       const avg = allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length;
       await supabase
         .from('businesses')
-        .update({
-          rating:        parseFloat(avg.toFixed(1)),
-          total_reviews: allReviews.length,
-          updated_at:    new Date().toISOString(),
-        })
+        .update({ rating: parseFloat(avg.toFixed(1)), total_reviews: allReviews.length, updated_at: new Date().toISOString() })
         .eq('id', body.business_id);
     }
 

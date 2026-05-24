@@ -3,19 +3,20 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 // ─── PATCH /api/inquiries/[id] ────────────────────────────────────────────
-// Vendor updates the status of an inquiry
-// Body: { status: 'pending' | 'responded' | 'closed' }
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = getClient();
     const { id } = await params;
     const body = await req.json();
 
@@ -51,18 +52,15 @@ export async function PATCH(
 }
 
 // ─── DELETE /api/inquiries/[id] ───────────────────────────────────────────
-// Hard delete an inquiry (vendor cleanup)
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = getClient();
     const { id } = await params;
 
-    const { error } = await supabase
-      .from('inquiries')
-      .delete()
-      .eq('id', id);
+    const { error } = await supabase.from('inquiries').delete().eq('id', id);
 
     if (error) {
       console.error('[DELETE /api/inquiries/[id]]', error);

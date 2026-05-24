@@ -3,21 +3,24 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// Client is created inside each handler so env vars are
+// resolved at request time, not at build time.
+function getClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 // ─── GET /api/businesses/[id] ─────────────────────────────────────────────
-// Returns a single business with its products, properties, and reviews
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = getClient();
     const { id } = await params;
 
-    // Fetch business
     const { data: business, error: bizError } = await supabase
       .from('businesses')
       .select('*')
@@ -28,28 +31,10 @@ export async function GET(
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
     }
 
-    // Fetch related data in parallel
     const [productsRes, propertiesRes, reviewsRes] = await Promise.all([
-      supabase
-        .from('products')
-        .select('*')
-        .eq('business_id', id)
-        .eq('is_available', true)
-        .order('created_at', { ascending: false }),
-
-      supabase
-        .from('properties')
-        .select('*')
-        .eq('business_id', id)
-        .eq('is_available', true)
-        .order('created_at', { ascending: false }),
-
-      supabase
-        .from('reviews')
-        .select('*')
-        .eq('business_id', id)
-        .order('created_at', { ascending: false })
-        .limit(20),
+      supabase.from('products').select('*').eq('business_id', id).eq('is_available', true).order('created_at', { ascending: false }),
+      supabase.from('properties').select('*').eq('business_id', id).eq('is_available', true).order('created_at', { ascending: false }),
+      supabase.from('reviews').select('*').eq('business_id', id).order('created_at', { ascending: false }).limit(20),
     ]);
 
     return NextResponse.json({
@@ -67,17 +52,15 @@ export async function GET(
 }
 
 // ─── PATCH /api/businesses/[id] ───────────────────────────────────────────
-// Partial update — only sends fields that changed
-// Restricted fields (rating, total_reviews, is_verified) cannot be set here
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = getClient();
     const { id } = await params;
     const body = await req.json();
 
-    // Strip fields that should not be client-editable
     const BLOCKED = ['id', 'rating', 'total_reviews', 'is_verified', 'created_at', 'updated_at'];
     BLOCKED.forEach(f => delete body[f]);
 
@@ -85,7 +68,6 @@ export async function PATCH(
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
     }
 
-    // Validate category if provided
     if (body.category) {
       const validCategories = ['food_delivery', 'fashion', 'real_estate'];
       if (!validCategories.includes(body.category)) {
@@ -113,31 +95,24 @@ export async function PATCH(
 }
 
 // ─── DELETE /api/businesses/[id] ──────────────────────────────────────────
-// Soft delete: sets is_active = false
-// Hard delete: pass ?hard=true (cascades to products, properties, inquiries, reviews)
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = getClient();
     const { id } = await params;
     const hard = new URL(req.url).searchParams.get('hard') === 'true';
 
     if (hard) {
-      const { error } = await supabase
-        .from('businesses')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('businesses').delete().eq('id', id);
       if (error) {
         console.error('[DELETE /api/businesses/[id]] hard delete', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
-
       return NextResponse.json({ message: 'Business permanently deleted' });
     }
 
-    // Soft delete
     const { data, error } = await supabase
       .from('businesses')
       .update({ is_active: false, updated_at: new Date().toISOString() })
