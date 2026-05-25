@@ -89,11 +89,11 @@ export default function Footer() {
               </li>
               <li className="flex items-start gap-2.5">
                 <Phone className="w-4 h-4 mt-0.5 text-orange-500 flex-shrink-0" />
-                <span>+234 800 AFRICART</span>
+                <span>+234 814 975 1518</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Mail className="w-4 h-4 mt-0.5 text-orange-500 flex-shrink-0" />
-                <span>hello@africart.com</span>
+                <span>drovo@wealthyrealmint.com</span>
               </li>
             </ul>
 
@@ -111,7 +111,7 @@ export default function Footer() {
 
         {/* Bottom bar */}
         <div className="pt-8 border-t border-gray-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
-          <p>&copy; {new Date().getFullYear()} AfriCart. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} Drovo. All rights reserved.</p>
           <div className="flex gap-6">
             <Link href="/privacy" className="hover:text-orange-400 transition-colors">Privacy Policy</Link>
             <Link href="/terms" className="hover:text-orange-400 transition-colors">Terms of Service</Link>

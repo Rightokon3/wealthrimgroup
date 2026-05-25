@@ -371,7 +371,7 @@ export default function HomePage() {
         <div className="max-w-[1400px] mx-auto px-6 lg:px-8">
           <div className="text-center mb-12">
             <span className="text-orange-400 font-bold text-sm uppercase tracking-widest">Simple & Fast</span>
-            <h2 className="text-4xl font-black mt-2 mb-3">How AfriCart Works</h2>
+            <h2 className="text-4xl font-black mt-2 mb-3">How Drovo Works</h2>
             <p className="text-gray-400 max-w-xl mx-auto">Whether you're a vendor or a buyer — getting started takes minutes.</p>
             <div className="flex items-center justify-center gap-2 mt-6">
               {(['buyer', 'vendor'] as const).map(tab => (
