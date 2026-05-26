@@ -77,7 +77,7 @@ export default function LoginPage() {
             )}
 
             {/* next-param info (e.g. "login to leave a review") */}
-            {<Suspense fallback={'loading....'}>
+            {<Suspense fallback={null}>
               searchParams.get('next') && (
               <div className="p-3 mb-5 rounded-xl bg-orange-50 border border-orange-100 text-orange-700 text-sm font-medium text-center">
                 Please sign in to continue
