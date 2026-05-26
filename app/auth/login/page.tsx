@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -77,11 +77,13 @@ export default function LoginPage() {
             )}
 
             {/* next-param info (e.g. "login to leave a review") */}
-            {searchParams.get('next') && (
+            {<Suspense fallback={'loading....'}>
+              searchParams.get('next') && (
               <div className="p-3 mb-5 rounded-xl bg-orange-50 border border-orange-100 text-orange-700 text-sm font-medium text-center">
                 Please sign in to continue
               </div>
-            )}
+            )
+            </Suspense>}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
