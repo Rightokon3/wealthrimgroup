@@ -90,7 +90,7 @@ function SignupPageInner() {
               <ShoppingCart className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-2xl font-black text-white">Create account</h1>
-            <p className="text-orange-100 text-sm mt-1">Join AfriCart today — it's free</p>
+            <p className="text-orange-100 text-sm mt-1">Join Drovo today — it's free</p>
           </div>
 
           <div className="px-8 py-8">

@@ -61,7 +61,7 @@ function LoginPageInner() {
               <ShoppingCart className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-2xl font-black text-white">Welcome back</h1>
-            <p className="text-orange-100 text-sm mt-1">Sign in to your AfriCart account</p>
+            <p className="text-orange-100 text-sm mt-1">Sign in to your Drovo account</p>
           </div>
 
           <div className="px-8 py-8">
