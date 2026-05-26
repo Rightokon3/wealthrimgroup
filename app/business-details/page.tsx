@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import InquiryModal from '@/components/InquiryModal';
 
-export default function BusinessDetailPage() {
+function BusinessDetailPageInner() {
   const params = useParams();
   const router = useRouter();
   const businessId = params.id as string;
@@ -308,5 +308,22 @@ export default function BusinessDetailPage() {
 
       <InquiryModal isOpen={inquiryOpen} onClose={()=>setInquiryOpen(false)} businessId={businessId} businessName={business.business_name}/>
     </div>
+  );
+}
+
+import { Suspense } from 'react';
+
+export default function BusinessDetailPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen pt-[64px] flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-gray-400 text-sm font-medium">Loading business...</p>
+        </div>
+      </div>
+    }>
+      <BusinessDetailPageInner />
+    </Suspense>
   );
 }

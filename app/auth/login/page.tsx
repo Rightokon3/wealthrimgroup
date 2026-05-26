@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { ShoppingCart, Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
-export default function LoginPage() {
+function LoginPageInner() {
   const router        = useRouter();
   const searchParams  = useSearchParams();
   const { signIn, isLoggedIn, loading } = useAuth();
@@ -61,7 +61,7 @@ export default function LoginPage() {
               <ShoppingCart className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-2xl font-black text-white">Welcome back</h1>
-            <p className="text-orange-100 text-sm mt-1">Sign in to your Drovo account</p>
+            <p className="text-orange-100 text-sm mt-1">Sign in to your AfriCart account</p>
           </div>
 
           <div className="px-8 py-8">
@@ -77,13 +77,11 @@ export default function LoginPage() {
             )}
 
             {/* next-param info (e.g. "login to leave a review") */}
-            {<Suspense fallback={null}>
-              searchParams.get('next') && (
+            {searchParams.get('next') && (
               <div className="p-3 mb-5 rounded-xl bg-orange-50 border border-orange-100 text-orange-700 text-sm font-medium text-center">
                 Please sign in to continue
               </div>
-            )
-            </Suspense>}
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -156,5 +154,19 @@ export default function LoginPage() {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+import { Suspense } from 'react';
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen pt-[64px] flex items-center justify-center bg-orange-50">
+        <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <LoginPageInner />
+    </Suspense>
   );
 }

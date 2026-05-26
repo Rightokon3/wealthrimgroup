@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
-export default function AuthCallbackPage() {
+function AuthCallbackInner() {
   const router = useRouter();
 
   useEffect(() => {
@@ -37,5 +37,19 @@ export default function AuthCallbackPage() {
         <p className="text-gray-600 font-medium">Confirming your account...</p>
       </div>
     </div>
+  );
+}
+
+import { Suspense } from 'react';
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen pt-[64px] flex items-center justify-center bg-orange-50">
+        <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <AuthCallbackInner />
+    </Suspense>
   );
 }

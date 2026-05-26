@@ -8,7 +8,7 @@ import { ShoppingCart, Mail, Lock, Eye, EyeOff, User, ArrowRight, AlertCircle, S
 import { useAuth } from '@/contexts/AuthContext';
 import { UserRole } from '@/lib/supabase';
 
-export default function SignupPage() {
+function SignupPageInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const { signUp, isLoggedIn, loading } = useAuth();
@@ -90,7 +90,7 @@ export default function SignupPage() {
               <ShoppingCart className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-2xl font-black text-white">Create account</h1>
-            <p className="text-orange-100 text-sm mt-1">Join Drovo today — it's free</p>
+            <p className="text-orange-100 text-sm mt-1">Join AfriCart today — it's free</p>
           </div>
 
           <div className="px-8 py-8">
@@ -209,5 +209,19 @@ export default function SignupPage() {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+import { Suspense } from 'react';
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen pt-[64px] flex items-center justify-center bg-orange-50">
+        <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <SignupPageInner />
+    </Suspense>
   );
 }
