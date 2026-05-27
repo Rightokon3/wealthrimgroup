@@ -39,12 +39,19 @@ export default function VendorDashboardPage() {
   const [dataLoading, setDataLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  // Auth guard
+  // Auth guard — wait until loading is fully done before deciding
   useEffect(() => {
-    if (!authLoading && (!isLoggedIn || !isVendor)) {
+    if (authLoading) return; // still resolving session + profile, wait
+    if (!isLoggedIn) {
       router.replace('/auth/login?next=/vendor/dashboard');
+      return;
     }
-  }, [authLoading, isLoggedIn, isVendor, router]);
+    // isVendor may still be false for a brief moment if profile is loading
+    // Only redirect if we have a profile and it's not vendor
+    if (profile !== null && !isVendor) {
+      router.replace('/?error=vendor_only');
+    }
+  }, [authLoading, isLoggedIn, isVendor, profile, router]);
 
   useEffect(() => {
     if (user && isVendor) fetchData();
@@ -83,10 +90,14 @@ export default function VendorDashboardPage() {
     setInquiries(prev => prev.map(i => i.id === id ? { ...i, status } : i));
   }
 
-  if (authLoading || (!isVendor && !authLoading)) {
+  // Show spinner while auth is loading OR while we have a user but no profile yet
+  if (authLoading || (isLoggedIn && profile === null)) {
     return (
       <div className="min-h-screen pt-[64px] flex items-center justify-center">
-        <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-gray-400 font-medium">Loading your dashboard...</p>
+        </div>
       </div>
     );
   }
