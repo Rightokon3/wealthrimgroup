@@ -120,7 +120,7 @@ export default function Navigation() {
                             {isVendor ? (
                               <>
                                 <Link href="/vendor/dashboard" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-700 transition-colors"><LayoutDashboard className="w-4 h-4" /> Dashboard</Link>
-                                <Link href="/vendor/listings" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-700 transition-colors"><Store className="w-4 h-4" /> My Listings</Link>
+                                <Link href={`/vendor/listings/${profile?.id}/edit`} onClick={() => setUserMenuOpen(false)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-700 transition-colors"><Store className="w-4 h-4" /> My Listings</Link>
                                 <Link href="/vendor/inquiries" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-700 transition-colors"><ShoppingCart className="w-4 h-4" /> Inquiries</Link>
                               </>
                             ) : (
