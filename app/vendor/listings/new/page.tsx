@@ -67,6 +67,7 @@ export default function NewListingPage() {
   const [isSubmitting,    setIsSubmitting]    = useState(false);
   const [isSuccess,       setIsSuccess]       = useState(false);
   const [submitError,     setSubmitError]     = useState('');
+  const [uploadProgress,  setUploadProgress]  = useState('');
   const [coverImage,      setCoverImage]      = useState<File | null>(null);
   const [coverPreview,    setCoverPreview]    = useState<string | null>(null);
   const [galleryImages,   setGalleryImages]   = useState<File[]>([]);
@@ -100,22 +101,35 @@ export default function NewListingPage() {
     setGalleryPreviews(p => p.filter((_, idx) => idx !== i));
   };
 
-  async function uploadFile(file: File, folder: 'covers' | 'gallery'): Promise<string> {
+  // Upload a single file with a 30-second timeout
+  // Returns the public URL, or null if the bucket isn't set up yet
+  async function uploadFile(file: File, folder: 'covers' | 'gallery'): Promise<string | null> {
     const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowed.includes(file.type)) throw new Error(`${file.name}: unsupported type. Use JPG, PNG or WebP.`);
-    if (file.size > 5 * 1024 * 1024) throw new Error(`${file.name} exceeds the 5 MB limit.`);
+    if (!allowed.includes(file.type)) {
+      throw new Error(`${file.name}: use JPG, PNG or WebP.`);
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error(`${file.name} is over 5 MB. Please compress it first.`);
+    }
 
     const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
-    const name = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const path = `${folder}/${name}`;
+    const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
-    const { error } = await supabase.storage
+    // Race the upload against a 30-second timeout
+    const uploadPromise = supabase.storage
       .from('business-images')
       .upload(path, file, { cacheControl: '3600', upsert: false });
 
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Upload timed out after 30 s. Check your connection.')), 30_000)
+    );
+
+    const { error } = await Promise.race([uploadPromise, timeoutPromise]) as Awaited<typeof uploadPromise>;
+
     if (error) {
-      if (error.message.toLowerCase().includes('bucket'))
-        throw new Error('Storage bucket "business-images" not found. Create it in Supabase → Storage and set it to Public.');
+      const msg = error.message.toLowerCase();
+      // Bucket missing — skip image upload silently so the listing still saves
+      if (msg.includes('bucket') || msg.includes('not found')) return null;
       throw new Error(`Upload failed: ${error.message}`);
     }
 
@@ -127,18 +141,31 @@ export default function NewListingPage() {
 
     setIsSubmitting(true);
     setSubmitError('');
+    setUploadProgress('Starting...');
 
     try {
-      let coverUrl = '';
+      let coverUrl: string | null = null;
       const galleryUrls: string[] = [];
 
-      if (coverImage) coverUrl = await uploadFile(coverImage, 'covers');
-      for (const img of galleryImages) galleryUrls.push(await uploadFile(img, 'gallery'));
+      // Upload cover image
+      if (coverImage) {
+        setUploadProgress('Uploading cover image...');
+        coverUrl = await uploadFile(coverImage, 'covers');
+      }
+
+      // Upload gallery images one by one with progress
+      for (let i = 0; i < galleryImages.length; i++) {
+        setUploadProgress(`Uploading photo ${i + 1} of ${galleryImages.length}...`);
+        const url = await uploadFile(galleryImages[i], 'gallery');
+        if (url) galleryUrls.push(url);
+      }
+
+      setUploadProgress('Saving your listing...');
 
       const { error } = await supabase.from('businesses').insert([{
         ...data,
         user_id:         user.id,
-        cover_image_url: coverUrl || null,
+        cover_image_url: coverUrl ?? null,
         gallery_images:  galleryUrls,
         is_active:       true,
         is_verified:     false,
@@ -148,10 +175,12 @@ export default function NewListingPage() {
 
       if (error) throw new Error(error.message);
 
+      setUploadProgress('');
       setIsSuccess(true);
       setTimeout(() => router.push('/vendor/dashboard'), 3000);
     } catch (err: any) {
       setSubmitError(err.message ?? 'Something went wrong. Please try again.');
+      setUploadProgress('');
     } finally {
       setIsSubmitting(false);
     }
@@ -517,7 +546,7 @@ export default function NewListingPage() {
                   <button type="submit" disabled={isSubmitting}
                     className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm hover:from-orange-600 hover:to-red-700 transition-all shadow-lg shadow-orange-200 disabled:opacity-60 disabled:cursor-not-allowed">
                     {isSubmitting
-                      ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Publishing...</>
+                      ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> {uploadProgress || 'Publishing...'}</>
                       : <>Publish Listing <ArrowRight className="w-4 h-4" /></>
                     }
                   </button>
@@ -526,8 +555,18 @@ export default function NewListingPage() {
                 <p className="text-xs text-center text-gray-400 mt-4">
                   By publishing you agree to our{' '}
                   <Link href="/terms" className="text-orange-500 hover:underline">Terms of Service</Link>.
-                  Your listing will be live immediately.
+                  Images are optional — your listing will go live even without them.
                 </p>
+
+                {/* Upload progress bar */}
+                {isSubmitting && uploadProgress && (
+                  <div className="mt-4 p-3 rounded-xl bg-orange-50 border border-orange-100">
+                    <div className="flex items-center gap-2 text-sm text-orange-700 font-medium">
+                      <div className="w-3.5 h-3.5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                      {uploadProgress}
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
