@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-
   let res = NextResponse.next({ request: req });
 
   const supabase = createServerClient(
@@ -22,16 +21,13 @@ export async function middleware(req: NextRequest) {
     }
   );
 
-  // Refresh the session so cookies stay valid
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Only guard: unauthenticated users cannot reach /account
-  // Everything else (vendor pages, list-business) is handled
-  // client-side in the page components — middleware role checks
-  // are unreliable because the session cookie is sometimes not
-  // yet available on the first edge request after login.
-  const guestOnlyPaths = ['/account'];
-  if (guestOnlyPaths.some(p => pathname.startsWith(p)) && !user) {
+  // Only hard-guard /account at the edge. Vendor routes (setup, dashboard,
+  // products) are guarded client-side in the page components themselves —
+  // this avoids the redirect-loop / false-negative issues that come from
+  // doing role lookups inside middleware before the session is fully synced.
+  if (pathname.startsWith('/account') && !user) {
     const url = new URL('/auth/login', req.url);
     url.searchParams.set('next', pathname);
     return NextResponse.redirect(url);
@@ -41,6 +37,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Only run middleware where we need it
   matcher: ['/account/:path*'],
 };

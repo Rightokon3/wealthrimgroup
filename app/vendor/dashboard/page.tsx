@@ -1,160 +1,148 @@
 'use client';
-
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
 import {
-  LayoutDashboard, Package, MessageSquare, Star, PlusCircle,
-  Eye, Edit3, ToggleLeft, ToggleRight, Check, X, Clock,
-  ChevronRight, Bell, Settings, LogOut, Store, Phone,
-  BarChart3, Users, ArrowUpRight, AlertCircle, Trash2
+  LayoutDashboard, Package, ShoppingBag, TrendingUp, Plus, Eye,
+  Edit3, ToggleRight, ToggleLeft, Clock, CheckCircle, XCircle,
+  Truck, Bell, LogOut, Star, ChevronRight, Banknote, Percent,
+  Store as StoreIcon
 } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Business } from '@/types/index';
+import { Store, Product, Order, CATEGORY_META, OrderStatus } from '@/types';
 
-interface Inquiry {
-  id: string; customer_name: string; customer_email: string;
-  customer_phone?: string; message: string; inquiry_type: string;
-  status: string; created_at: string; business_id: string;
-  businesses?: { business_name: string };
-}
+type Tab = 'overview'|'products'|'orders'|'earnings';
 
-type Tab = 'overview' | 'listings' | 'inquiries' | 'settings';
-
-const STATUS_COLOR: Record<string, string> = {
-  pending:   'bg-amber-100 text-amber-700 border-amber-200',
-  responded: 'bg-green-100 text-green-700 border-green-200',
-  closed:    'bg-gray-100 text-gray-500 border-gray-200',
+const STATUS_STYLE: Record<OrderStatus,string> = {
+  pending:    'bg-amber-100 text-amber-700 border-amber-200',
+  confirmed:  'bg-blue-100 text-blue-700 border-blue-200',
+  preparing:  'bg-purple-100 text-purple-700 border-purple-200',
+  ready:      'bg-indigo-100 text-indigo-700 border-indigo-200',
+  on_the_way: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+  delivered:  'bg-green-100 text-green-700 border-green-200',
+  cancelled:  'bg-red-100 text-red-700 border-red-200',
+  refunded:   'bg-gray-100 text-gray-600 border-gray-200',
+};
+const STATUS_NEXT: Partial<Record<OrderStatus,OrderStatus>> = {
+  pending:'confirmed', confirmed:'preparing', preparing:'ready', ready:'on_the_way', on_the_way:'delivered',
 };
 
-export default function VendorDashboardPage() {
-  const router  = useRouter();
-  const { user, profile, isVendor, isLoggedIn, loading: authLoading, signOut } = useAuth();
-
-  const [tab,        setTab]        = useState<Tab>('overview');
-  const [businesses, setBusinesses] = useState<Business[]>([]);
-  const [inquiries,  setInquiries]  = useState<Inquiry[]>([]);
-  const [dataLoading, setDataLoading] = useState(true);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-
-  // Auth guard — wait until loading is fully done before deciding
-  useEffect(() => {
-    if (authLoading) return; // still resolving session + profile, wait
-    if (!isLoggedIn) {
-      router.replace('/auth/login?next=/vendor/dashboard');
-      return;
-    }
-    // isVendor may still be false for a brief moment if profile is loading
-    // Only redirect if we have a profile and it's not vendor
-    if (profile !== null && !isVendor) {
-      router.replace('/?error=vendor_only');
-    }
-  }, [authLoading, isLoggedIn, isVendor, profile, router]);
+export default function VendorDashboard() {
+  const router = useRouter();
+  const { user, profile, isVendor, isLoggedIn, loading: al, signOut } = useAuth();
+  const [tab,      setTab]      = useState<Tab>('overview');
+  const [store,    setStore]    = useState<Store|null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders,   setOrders]   = useState<Order[]>([]);
+  const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
-    if (user && isVendor) fetchData();
-  }, [user, isVendor]);
+    if (al) return;
+    if (!isLoggedIn) { router.replace('/auth/login?next=/vendor/dashboard'); return; }
+  }, [al, isLoggedIn, router]);
 
-  async function fetchData() {
-    setDataLoading(true);
-    try {
-      const [bizRes, inqRes] = await Promise.all([
-        supabase.from('businesses').select('*').eq('user_id', user!.id).order('created_at', { ascending: false }),
-        supabase.from('inquiries').select('*, businesses(business_name)').in(
-          'business_id',
-          (await supabase.from('businesses').select('id').eq('user_id', user!.id)).data?.map(b => b.id) ?? []
-        ).order('created_at', { ascending: false }).limit(50),
-      ]);
-      setBusinesses(bizRes.data ?? []);
-      setInquiries(inqRes.data ?? []);
-    } finally {
-      setDataLoading(false);
-    }
+  useEffect(() => {
+    if (user && isVendor) fetchAll();
+    else if (user && profile && !isVendor) router.replace('/');
+  }, [user, isVendor, profile]);
+
+  async function fetchAll() {
+    setLoading(true);
+    const { data: s } = await supabase.from('stores').select('*').eq('vendor_id', user!.id).order('created_at', { ascending: true }).limit(1).maybeSingle();
+    if (!s) { router.replace('/vendor/setup'); return; }
+    setStore(s);
+    const [pr, or] = await Promise.all([
+      supabase.from('products').select('*').eq('store_id', s.id).order('created_at', { ascending: false }),
+      supabase.from('orders').select('*, order_items(*)').eq('store_id', s.id).order('created_at', { ascending: false }),
+    ]);
+    setProducts(pr.data ?? []);
+    setOrders(or.data ?? []);
+    setLoading(false);
   }
 
-  async function toggleActive(id: string, current: boolean) {
-    await supabase.from('businesses').update({ is_active: !current }).eq('id', id).eq('user_id', user!.id);
-    setBusinesses(prev => prev.map(b => b.id === id ? { ...b, is_active: !current } : b));
+  async function toggleProduct(id: string, cur: boolean) {
+    await supabase.from('products').update({ is_available: !cur }).eq('id', id);
+    setProducts(p => p.map(x => x.id === id ? { ...x, is_available: !cur } : x));
   }
 
-  async function deleteBusiness(id: string) {
-    await supabase.from('businesses').delete().eq('id', id).eq('user_id', user!.id);
-    setBusinesses(prev => prev.filter(b => b.id !== id));
-    setDeleteConfirm(null);
+  async function advanceOrder(id: string, next: OrderStatus) {
+    await supabase.from('orders').update({ status: next }).eq('id', id);
+    setOrders(o => o.map(x => x.id === id ? { ...x, status: next } : x));
   }
 
-  async function updateInquiryStatus(id: string, status: string) {
-    await supabase.from('inquiries').update({ status }).eq('id', id);
-    setInquiries(prev => prev.map(i => i.id === id ? { ...i, status } : i));
-  }
+  if (al || (isLoggedIn && !profile)) return (
+    <div className="min-h-screen pt-[64px] flex items-center justify-center">
+      <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
-  // Show spinner while auth is loading OR while we have a user but no profile yet
-  if (authLoading || (isLoggedIn && profile === null)) {
-    return (
-      <div className="min-h-screen pt-[64px] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-gray-400 font-medium">Loading your dashboard...</p>
-        </div>
+  if (!store && !loading) return (
+    <div className="min-h-screen pt-[64px] flex items-center justify-center bg-orange-50 px-4">
+      <div className="text-center max-w-sm">
+        <StoreIcon className="w-14 h-14 text-orange-300 mx-auto mb-4" />
+        <h2 className="text-xl font-black text-gray-900 mb-2">No store yet</h2>
+        <p className="text-gray-400 text-sm mb-5">Set up your store first to start selling.</p>
+        <Link href="/vendor/setup" className="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm">Set Up My Store</Link>
       </div>
-    );
-  }
+    </div>
+  );
 
-  const pendingCount = inquiries.filter(i => i.status === 'pending').length;
-  const avgRating    = businesses.length ? (businesses.reduce((s, b) => s + b.rating, 0) / businesses.length).toFixed(1) : '—';
+  // ── computed stats ────────────────────────────────────────────────────────
+  const totalRevenue    = orders.filter(o => o.status === 'delivered').reduce((s, o) => s + o.subtotal, 0);
+  const totalPlatformFee= orders.filter(o => o.status === 'delivered').reduce((s, o) => s + o.platform_fee, 0);
+  const totalVendorPayout= orders.filter(o => o.status === 'delivered').reduce((s, o) => s + o.vendor_payout, 0);
+  const pendingOrders   = orders.filter(o => ['pending','confirmed','preparing','ready','on_the_way'].includes(o.status));
+  const meta            = store ? CATEGORY_META[store.category] : null;
 
-  const STATS = [
-    { label: 'My Listings',       value: businesses.length,             icon: <Store className="w-5 h-5" />,        color: 'from-orange-500 to-red-500' },
-    { label: 'Pending Inquiries', value: pendingCount,                  icon: <MessageSquare className="w-5 h-5" />, color: 'from-amber-500 to-yellow-500' },
-    { label: 'Avg. Rating',       value: avgRating,                     icon: <Star className="w-5 h-5" />,          color: 'from-rose-500 to-pink-500' },
-    { label: 'Total Reviews',     value: businesses.reduce((s,b)=>s+b.total_reviews,0), icon: <Users className="w-5 h-5" />, color: 'from-blue-500 to-indigo-500' },
-  ];
-
-  const NAV: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
-    { id: 'overview',  label: 'Overview',    icon: <LayoutDashboard className="w-4 h-4" /> },
-    { id: 'listings',  label: 'My Listings', icon: <Package className="w-4 h-4" />,        badge: businesses.length },
-    { id: 'inquiries', label: 'Inquiries',   icon: <MessageSquare className="w-4 h-4" />,  badge: pendingCount || undefined },
-    { id: 'settings',  label: 'Settings',    icon: <Settings className="w-4 h-4" /> },
+  const NAV: { id:Tab; label:string; icon:React.ReactNode; badge?:number }[] = [
+    { id:'overview',  label:'Overview',  icon:<LayoutDashboard className="w-4 h-4"/> },
+    { id:'products',  label:`${meta?.productLabel ?? 'Products'}s`, icon:<Package className="w-4 h-4"/>, badge:products.length },
+    { id:'orders',    label:'Orders',    icon:<ShoppingBag className="w-4 h-4"/>, badge:pendingOrders.length||undefined },
+    { id:'earnings',  label:'Earnings',  icon:<TrendingUp className="w-4 h-4"/> },
   ];
 
   return (
     <div className="min-h-screen pt-[64px] bg-gray-50 flex">
       {/* Sidebar */}
-      <aside className="w-60 flex-shrink-0 bg-gray-950 text-white flex flex-col sticky top-[64px] h-[calc(100vh-64px)]">
+      <aside className="w-56 flex-shrink-0 bg-gray-950 text-white flex flex-col sticky top-[64px] h-[calc(100vh-64px)]">
         <div className="p-4 border-b border-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center font-black text-white">
-              {profile?.full_name?.charAt(0).toUpperCase() ?? 'V'}
-            </div>
+          <div className="flex items-center gap-2.5">
+            {store?.logo_url
+              ? <img src={store.logo_url} className="w-9 h-9 rounded-xl object-cover flex-shrink-0" alt="" />
+              : <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center font-black text-white flex-shrink-0">{store?.name?.charAt(0)}</div>
+            }
             <div className="min-w-0">
-              <div className="font-bold text-sm truncate">{profile?.full_name ?? 'Vendor'}</div>
-              <div className="text-xs text-amber-400 font-semibold">🏪 Vendor Account</div>
+              <div className="font-bold text-sm truncate">{store?.name}</div>
+              <div className="text-xs text-orange-400 font-semibold">{meta?.icon} {meta?.label}</div>
             </div>
           </div>
         </div>
-
         <nav className="flex-1 p-3 space-y-1">
-          {NAV.map(item => (
-            <button key={item.id} onClick={() => setTab(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${tab === item.id ? 'bg-orange-500 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
-              <span className="flex-shrink-0">{item.icon}</span>
-              <span className="flex-1 text-left">{item.label}</span>
-              {item.badge !== undefined && item.badge > 0 && (
-                <span className={`text-xs font-black px-1.5 py-0.5 rounded-full ${tab === item.id ? 'bg-white/20' : 'bg-orange-500 text-white'}`}>{item.badge}</span>
+          {NAV.map(n => (
+            <button key={n.id} onClick={() => setTab(n.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${tab===n.id?'bg-orange-500 text-white':'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+              <span className="flex-shrink-0">{n.icon}</span>
+              <span className="flex-1 text-left">{n.label}</span>
+              {n.badge !== undefined && n.badge > 0 && (
+                <span className={`text-xs font-black px-1.5 py-0.5 rounded-full ${tab===n.id?'bg-white/20':'bg-orange-500 text-white'}`}>{n.badge}</span>
               )}
             </button>
           ))}
         </nav>
-
         <div className="p-3 border-t border-gray-800 space-y-1">
-          <Link href="/vendor/listings/new" className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-orange-400 hover:bg-gray-800 transition-all">
-            <PlusCircle className="w-4 h-4" /> New Listing
+          <Link href={`/store/${store?.id}`}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-400 hover:bg-gray-800 hover:text-white transition-all">
+            <Eye className="w-4 h-4 flex-shrink-0"/> View My Store
           </Link>
-          <button onClick={async () => { await signOut(); router.push('/'); }}
+          <Link href="/vendor/products/new"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-orange-400 hover:bg-gray-800 transition-all">
+            <Plus className="w-4 h-4 flex-shrink-0"/> Add {meta?.productLabel}
+          </Link>
+          <button onClick={async()=>{await signOut();router.push('/');}}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-800 hover:text-white transition-all">
-            <LogOut className="w-4 h-4" /> Sign Out
+            <LogOut className="w-4 h-4 flex-shrink-0"/> Sign Out
           </button>
         </div>
       </aside>
@@ -165,235 +153,290 @@ export default function VendorDashboardPage() {
         <div className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between sticky top-0 z-20">
           <div>
             <h1 className="text-xl font-black text-gray-900 capitalize">{tab}</h1>
-            <p className="text-xs text-gray-400">{tab === 'overview' ? 'Your business at a glance' : tab === 'listings' ? `${businesses.length} listings` : tab === 'inquiries' ? `${pendingCount} pending` : 'Account settings'}</p>
+            <p className="text-xs text-gray-400">
+              {tab==='overview'&&'Your store at a glance'}
+              {tab==='products'&&`${products.length} ${meta?.productLabel ?? 'product'}s listed`}
+              {tab==='orders'&&`${pendingOrders.length} active orders`}
+              {tab==='earnings'&&'Revenue & payout breakdown'}
+            </p>
           </div>
           <div className="flex items-center gap-3">
-            {pendingCount > 0 && (
+            {pendingOrders.length > 0 && (
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-bold">
-                <Bell className="w-3.5 h-3.5" />{pendingCount} pending
+                <Bell className="w-3.5 h-3.5"/> {pendingOrders.length} pending
               </div>
             )}
-            <Link href="/vendor/listings/new" className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm hover:from-orange-600 hover:to-red-700 transition-all shadow-md shadow-orange-200">
-              <PlusCircle className="w-4 h-4" /> Add Listing
+            <Link href="/vendor/products/new"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm hover:from-orange-600 hover:to-red-700 shadow-md shadow-orange-200">
+              <Plus className="w-4 h-4"/> Add {meta?.productLabel}
             </Link>
           </div>
         </div>
 
         <div className="p-6">
-          {/* ── OVERVIEW ── */}
-          {tab === 'overview' && (
+
+          {/* ── OVERVIEW ─────────────────────────────────────────────── */}
+          {tab==='overview' && (
             <div className="space-y-6">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {STATS.map((s, i) => (
-                  <motion.div key={s.label} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
+                {[
+                  { label:'Total Revenue',   value:`₦${totalRevenue.toLocaleString()}`,        icon:<Banknote className="w-5 h-5"/>,  color:'from-orange-500 to-red-500' },
+                  { label:'Platform Fee (10%)',value:`₦${totalPlatformFee.toLocaleString()}`,   icon:<Percent className="w-5 h-5"/>,  color:'from-gray-500 to-gray-600' },
+                  { label:'Your Earnings',   value:`₦${totalVendorPayout.toLocaleString()}`,    icon:<TrendingUp className="w-5 h-5"/>,'color':'from-green-500 to-emerald-500' },
+                  { label:'Active Orders',   value:pendingOrders.length,                         icon:<ShoppingBag className="w-5 h-5"/>, color:'from-blue-500 to-indigo-500' },
+                ].map((s,i) => (
+                  <motion.div key={s.label} initial={{opacity:0,y:15}} animate={{opacity:1,y:0}} transition={{delay:i*.07}}
                     className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
                     <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${s.color} flex items-center justify-center text-white mb-3`}>{s.icon}</div>
                     <div className="text-2xl font-black text-gray-900 mb-1">{s.value}</div>
-                    <div className="text-xs text-gray-500 font-medium">{s.label}</div>
+                    <div className="text-xs text-gray-400 font-medium">{s.label}</div>
                   </motion.div>
                 ))}
               </div>
 
-              {/* Recent inquiries */}
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-                <div className="flex items-center justify-between p-5 border-b border-gray-100">
-                  <h3 className="font-black text-gray-900 flex items-center gap-2"><MessageSquare className="w-4 h-4 text-orange-500" /> Recent Inquiries</h3>
-                  <button onClick={() => setTab('inquiries')} className="text-xs text-orange-500 font-bold hover:text-orange-700 flex items-center gap-1">View all <ChevronRight className="w-3 h-3" /></button>
-                </div>
-                {inquiries.slice(0, 5).map(inq => (
-                  <div key={inq.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 border-b border-gray-50 last:border-0">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white text-xs font-black flex-shrink-0">
-                        {inq.customer_name.charAt(0)}
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold text-gray-900">{inq.customer_name}</div>
-                        <div className="text-xs text-gray-400 truncate max-w-[220px]">{inq.message}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${STATUS_COLOR[inq.status]}`}>{inq.status}</span>
-                      <span className="text-xs text-gray-400">{new Date(inq.created_at).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                ))}
-                {inquiries.length === 0 && <div className="py-8 text-center text-gray-400 text-sm">No inquiries yet.</div>}
-              </div>
-
-              {/* My listings preview */}
-              {businesses.length > 0 && (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-                  <div className="flex items-center justify-between p-5 border-b border-gray-100">
-                    <h3 className="font-black text-gray-900 flex items-center gap-2"><Store className="w-4 h-4 text-orange-500" /> My Listings</h3>
-                    <button onClick={() => setTab('listings')} className="text-xs text-orange-500 font-bold hover:text-orange-700 flex items-center gap-1">Manage <ChevronRight className="w-3 h-3" /></button>
-                  </div>
-                  {businesses.slice(0, 3).map(biz => (
-                    <div key={biz.id} className="flex items-center gap-4 px-5 py-3.5 border-b border-gray-50 last:border-0">
-                      <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100">
-                        {biz.cover_image_url ? <img src={biz.cover_image_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center font-black text-gray-300">{biz.business_name.charAt(0)}</div>}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-bold text-sm text-gray-900 truncate">{biz.business_name}</div>
-                        <div className="text-xs text-gray-400">⭐ {biz.rating.toFixed(1)} · {biz.total_reviews} reviews · {biz.city}</div>
-                      </div>
-                      <span className={`text-xs font-bold px-2 py-1 rounded-full ${biz.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{biz.is_active ? 'Active' : 'Inactive'}</span>
+              {/* Earnings explanation */}
+              <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-2xl border border-orange-100 p-5">
+                <h3 className="font-black text-gray-900 mb-3 flex items-center gap-2">
+                  <Percent className="w-4 h-4 text-orange-500"/> How AfriCart Fees Work
+                </h3>
+                <div className="grid sm:grid-cols-3 gap-4 text-sm">
+                  {[
+                    { label:'Customer Pays', value:'₦10,000', color:'text-gray-700' },
+                    { label:'AfriCart Fee (10%)', value:'− ₦1,000', color:'text-red-600' },
+                    { label:'You Receive (90%)', value:'₦9,000', color:'text-green-600' },
+                  ].map(r => (
+                    <div key={r.label} className="bg-white rounded-xl p-3 text-center border border-orange-100">
+                      <div className={`text-xl font-black ${r.color}`}>{r.value}</div>
+                      <div className="text-xs text-gray-400 mt-1">{r.label}</div>
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
+
+              {/* Recent orders */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+                <div className="flex items-center justify-between p-5 border-b border-gray-100">
+                  <h3 className="font-black text-gray-900">Recent Orders</h3>
+                  <button onClick={()=>setTab('orders')} className="text-xs text-orange-500 font-bold flex items-center gap-1">View all <ChevronRight className="w-3 h-3"/></button>
+                </div>
+                {orders.slice(0,5).map(o => (
+                  <div key={o.id} className="flex items-center justify-between px-5 py-3.5 border-b border-gray-50 last:border-0">
+                    <div>
+                      <div className="text-sm font-bold text-gray-900">{o.order_number}</div>
+                      <div className="text-xs text-gray-400">{o.delivery_city} · ₦{o.total.toLocaleString()}</div>
+                    </div>
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${STATUS_STYLE[o.status]}`}>{o.status.replace(/_/g,' ')}</span>
+                  </div>
+                ))}
+                {orders.length===0 && <div className="py-10 text-center text-gray-400 text-sm">No orders yet.</div>}
+              </div>
             </div>
           )}
 
-          {/* ── LISTINGS ── */}
-          {tab === 'listings' && (
+          {/* ── PRODUCTS ─────────────────────────────────────────────── */}
+          {tab==='products' && (
             <div className="space-y-4">
               <div className="flex justify-end">
-                <Link href="/vendor/listings/new" className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm hover:from-orange-600 hover:to-red-700 transition-all">
-                  <PlusCircle className="w-4 h-4" /> New Listing
+                <Link href="/vendor/products/new"
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm hover:from-orange-600 hover:to-red-700 shadow-md shadow-orange-200">
+                  <Plus className="w-4 h-4"/> Add {meta?.productLabel}
                 </Link>
               </div>
-
-              {dataLoading ? (
-                [1,2,3].map(i => <div key={i} className="animate-pulse bg-white rounded-2xl p-4 border border-gray-100 h-20" />)
-              ) : businesses.length === 0 ? (
+              {loading ? [1,2,3].map(i=><div key={i} className="animate-pulse bg-white rounded-2xl h-20 border border-gray-100"/>)
+              : products.length===0 ? (
                 <div className="text-center py-20 bg-white rounded-2xl border border-gray-100">
-                  <Store className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-                  <h3 className="font-black text-gray-700 mb-2">No listings yet</h3>
-                  <p className="text-gray-400 text-sm mb-5">Create your first listing to start receiving inquiries.</p>
-                  <Link href="/vendor/listings/new" className="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm">Create First Listing</Link>
+                  <Package className="w-12 h-12 text-gray-200 mx-auto mb-4"/>
+                  <h3 className="font-black text-gray-700 mb-2">No {meta?.productLabel}s yet</h3>
+                  <p className="text-gray-400 text-sm mb-5">Add your first {meta?.productLabel?.toLowerCase()} to start selling.</p>
+                  <Link href="/vendor/products/new" className="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm">Add First Item</Link>
                 </div>
-              ) : businesses.map(biz => (
-                <div key={biz.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-4">
+              ) : products.map(p => (
+                <div key={p.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-4">
                   <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100">
-                    {biz.cover_image_url ? <img src={biz.cover_image_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center font-black text-xl text-gray-300">{biz.business_name.charAt(0)}</div>}
+                    {p.image_url?<img src={p.image_url} alt={p.name} className="w-full h-full object-cover"/>
+                      :<div className="w-full h-full flex items-center justify-center text-2xl">{meta?.icon}</div>}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <h3 className="font-black text-gray-900 truncate">{biz.business_name}</h3>
-                      {biz.is_verified && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">Verified</span>}
+                      <h3 className="font-black text-gray-900 truncate">{p.name}</h3>
+                      {p.is_featured&&<span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">🔥 Featured</span>}
                     </div>
-                    <div className="text-xs text-gray-400 capitalize">{biz.category?.replace('_',' ')} · {biz.city}, {biz.country} · ⭐ {biz.rating.toFixed(1)} ({biz.total_reviews})</div>
+                    <div className="flex items-center gap-3 text-xs text-gray-400">
+                      <span className="font-black text-orange-600 text-sm">₦{p.price.toLocaleString()}</span>
+                      {store?.category==='food'    && p.prep_time_min && <span>⏱ {p.prep_time_min} min</span>}
+                      {store?.category==='real_estate' && p.bedrooms  && <span>🛏 {p.bedrooms} bed</span>}
+                      {store?.category==='fashion' && p.stock_qty!==undefined && <span>📦 Stock: {p.stock_qty}</span>}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${biz.is_active ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>{biz.is_active ? 'Active' : 'Inactive'}</span>
-                    <Link href={`/businesses/${biz.id}`} className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-orange-50 hover:text-orange-500 transition-colors"><Eye className="w-4 h-4" /></Link>
-                    <Link href={`/vendor/listings/${biz.id}/edit`} className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-blue-50 hover:text-blue-500 transition-colors"><Edit3 className="w-4 h-4" /></Link>
-                    <button onClick={() => toggleActive(biz.id, biz.is_active)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${biz.is_active ? 'bg-gray-100 text-gray-500 hover:bg-amber-50 hover:text-amber-500' : 'bg-green-50 text-green-500 hover:bg-green-100'}`}>
-                      {biz.is_active ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${p.is_available?'bg-green-100 text-green-700':'bg-gray-100 text-gray-500'}`}>
+                      {p.is_available?'Available':'Hidden'}
+                    </span>
+                    <Link href={`/vendor/products/new?id=${p.id}`}
+                      className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-blue-50 hover:text-blue-500 transition-colors">
+                      <Edit3 className="w-4 h-4"/>
+                    </Link>
+                    <button onClick={()=>toggleProduct(p.id, p.is_available)}
+                      className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-amber-50 hover:text-amber-500 transition-colors">
+                      {p.is_available?<ToggleRight className="w-4 h-4"/>:<ToggleLeft className="w-4 h-4"/>}
                     </button>
-                    <button onClick={() => setDeleteConfirm(biz.id)} className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                   </div>
                 </div>
               ))}
-
-              {/* Delete confirm modal */}
-              <AnimatePresence>
-                {deleteConfirm && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDeleteConfirm(null)} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-                    <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-                      <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4"><AlertCircle className="w-6 h-6 text-red-500" /></div>
-                      <h3 className="font-black text-gray-900 text-center mb-2">Delete Listing?</h3>
-                      <p className="text-gray-500 text-sm text-center mb-5">This will permanently delete the listing and all its data. This cannot be undone.</p>
-                      <div className="flex gap-3">
-                        <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2.5 rounded-xl border border-gray-200 font-bold text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
-                        <button onClick={() => deleteBusiness(deleteConfirm)} className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 transition-colors">Delete</button>
-                      </div>
-                    </motion.div>
-                  </div>
-                )}
-              </AnimatePresence>
             </div>
           )}
 
-          {/* ── INQUIRIES ── */}
-          {tab === 'inquiries' && (
+          {/* ── ORDERS ───────────────────────────────────────────────── */}
+          {tab==='orders' && (
             <div className="space-y-4">
+              {/* Filter pills */}
               <div className="flex gap-2 flex-wrap">
-                {['all','pending','responded','closed'].map(s => (
-                  <span key={s} className="px-4 py-1.5 rounded-full text-sm font-bold bg-white border border-gray-200 text-gray-600 capitalize">
-                    {s} {s === 'all' ? `(${inquiries.length})` : s === 'pending' ? `(${pendingCount})` : ''}
+                {['all','pending','preparing','on_the_way','delivered','cancelled'].map(s=>(
+                  <span key={s} className={`px-3 py-1.5 rounded-full text-xs font-bold border cursor-pointer transition-all ${s==='all'?'bg-gray-900 text-white border-gray-900':'bg-white text-gray-600 border-gray-200 hover:border-orange-300'}`}>
+                    {s.replace(/_/g,' ')} {s==='all'?`(${orders.length})`:s==='pending'?`(${pendingOrders.length})`:''}
                   </span>
                 ))}
               </div>
 
-              {dataLoading ? (
-                [1,2,3].map(i => <div key={i} className="animate-pulse bg-white rounded-2xl p-5 border border-gray-100 h-24" />)
-              ) : inquiries.length === 0 ? (
+              {loading?[1,2,3].map(i=><div key={i} className="animate-pulse bg-white rounded-2xl h-24 border border-gray-100"/>)
+              :orders.length===0?(
                 <div className="text-center py-20 bg-white rounded-2xl border border-gray-100">
-                  <MessageSquare className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-                  <h3 className="font-black text-gray-700 mb-2">No inquiries yet</h3>
-                  <p className="text-gray-400 text-sm">Customer inquiries will appear here.</p>
+                  <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-4"/>
+                  <h3 className="font-black text-gray-700 mb-2">No orders yet</h3>
+                  <p className="text-gray-400 text-sm">Orders will appear here when customers purchase.</p>
                 </div>
-              ) : inquiries.map(inq => (
-                <div key={inq.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+              ):orders.map(o=>(
+                <div key={o.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
                   <div className="flex items-start justify-between gap-4 mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white font-black flex-shrink-0">{inq.customer_name.charAt(0)}</div>
-                      <div>
-                        <h4 className="font-black text-gray-900">{inq.customer_name}</h4>
-                        <div className="text-xs text-gray-400">{inq.customer_email}{inq.customer_phone && ` · ${inq.customer_phone}`}</div>
-                        {inq.businesses?.business_name && <div className="text-xs text-orange-500 font-semibold mt-0.5">Re: {inq.businesses.business_name}</div>}
+                    <div>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <h4 className="font-black text-gray-900">{o.order_number}</h4>
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${STATUS_STYLE[o.status]}`}>{o.status.replace(/_/g,' ')}</span>
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {o.delivery_address}, {o.delivery_city} · {o.customer_phone} · {new Date(o.created_at).toLocaleDateString()}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${STATUS_COLOR[inq.status]}`}>{inq.status}</span>
-                      <span className="text-xs text-gray-400 flex items-center gap-1"><Clock className="w-3 h-3" />{new Date(inq.created_at).toLocaleDateString()}</span>
+                    <div className="text-right flex-shrink-0">
+                      <div className="font-black text-gray-900">₦{o.total.toLocaleString()}</div>
+                      <div className="text-xs text-green-600 font-semibold">You get: ₦{o.vendor_payout.toLocaleString()}</div>
+                      <div className="text-xs text-gray-400">Fee: ₦{o.platform_fee.toLocaleString()}</div>
                     </div>
                   </div>
-                  <div className="bg-gray-50 rounded-xl p-3 mb-4 text-sm text-gray-700 leading-relaxed">{inq.message}</div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-gray-400 border border-gray-200 px-2 py-1 rounded-lg capitalize">{inq.inquiry_type?.replace('_',' ')}</span>
-                    <div className="ml-auto flex gap-2">
-                      {inq.status === 'pending' && (
-                        <button onClick={() => updateInquiryStatus(inq.id, 'responded')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-green-500 text-white text-xs font-bold hover:bg-green-600"><Check className="w-3 h-3" /> Responded</button>
-                      )}
-                      {inq.status !== 'closed' && (
-                        <button onClick={() => updateInquiryStatus(inq.id, 'closed')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gray-100 text-gray-600 text-xs font-bold hover:bg-gray-200"><X className="w-3 h-3" /> Close</button>
-                      )}
-                      {inq.customer_phone && (
-                        <a href={`tel:${inq.customer_phone}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-600 text-xs font-bold hover:bg-orange-100"><Phone className="w-3 h-3" /> Call</a>
-                      )}
+
+                  {/* Items */}
+                  {o.order_items && o.order_items.length > 0 && (
+                    <div className="bg-gray-50 rounded-xl p-3 mb-3 space-y-1">
+                      {o.order_items.map((item,i) => (
+                        <div key={i} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-700">{item.quantity}× {item.name}</span>
+                          <span className="font-bold text-gray-900">₦{item.subtotal.toLocaleString()}</span>
+                        </div>
+                      ))}
                     </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {STATUS_NEXT[o.status] && (
+                      <button onClick={()=>advanceOrder(o.id, STATUS_NEXT[o.status]!)}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-500 text-white text-xs font-bold hover:bg-orange-600 transition-colors">
+                        <CheckCircle className="w-3.5 h-3.5"/>
+                        Mark as {STATUS_NEXT[o.status]?.replace(/_/g,' ')}
+                      </button>
+                    )}
+                    {o.status==='pending' && (
+                      <button onClick={()=>advanceOrder(o.id,'cancelled')}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-100 text-gray-600 text-xs font-bold hover:bg-red-50 hover:text-red-600 transition-colors">
+                        <XCircle className="w-3.5 h-3.5"/> Cancel
+                      </button>
+                    )}
+                    {o.delivery_type==='delivery' && (
+                      <span className="text-xs text-gray-400 flex items-center gap-1 ml-auto">
+                        <Truck className="w-3 h-3"/> Delivery
+                      </span>
+                    )}
+                    {o.delivery_type==='viewing' && (
+                      <span className="text-xs text-gray-400 flex items-center gap-1 ml-auto">
+                        <Clock className="w-3 h-3"/> Viewing
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           )}
 
-          {/* ── SETTINGS ── */}
-          {tab === 'settings' && (
-            <div className="max-w-xl space-y-5">
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                <h3 className="font-black text-gray-900 mb-4">Profile Settings</h3>
-                <div className="space-y-4">
-                  {[
-                    { label: 'Full Name',     value: profile?.full_name   ?? '', field: 'full_name' },
-                    { label: 'Phone Number',  value: profile?.phone       ?? '', field: 'phone' },
-                    { label: 'City',          value: profile?.city        ?? '', field: 'city' },
-                    { label: 'Country',       value: profile?.country     ?? '', field: 'country' },
-                  ].map(f => (
-                    <div key={f.field}>
-                      <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">{f.label}</label>
-                      <input type="text" defaultValue={f.value} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none bg-gray-50 focus:bg-white" />
-                    </div>
-                  ))}
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Email</label>
-                    <input type="email" value={user?.email ?? ''} disabled className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm bg-gray-100 text-gray-400 cursor-not-allowed" />
-                    <p className="text-xs text-gray-400 mt-1">Email cannot be changed here.</p>
+          {/* ── EARNINGS ─────────────────────────────────────────────── */}
+          {tab==='earnings' && (
+            <div className="space-y-5">
+              {/* Summary cards */}
+              <div className="grid sm:grid-cols-3 gap-4">
+                {[
+                  { label:'Gross Revenue', value:`₦${totalRevenue.toLocaleString()}`, sub:'All delivered orders', color:'text-gray-900' },
+                  { label:'Platform Fee (10%)', value:`− ₦${totalPlatformFee.toLocaleString()}`, sub:'AfriCart commission', color:'text-red-600' },
+                  { label:'Net Payout (90%)', value:`₦${totalVendorPayout.toLocaleString()}`, sub:'What you receive', color:'text-green-600' },
+                ].map(s=>(
+                  <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                    <div className={`text-2xl font-black mb-1 ${s.color}`}>{s.value}</div>
+                    <div className="text-sm font-bold text-gray-900">{s.label}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{s.sub}</div>
                   </div>
-                  <button className="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm hover:from-orange-600 hover:to-red-700 transition-all">Save Changes</button>
+                ))}
+              </div>
+
+              {/* Fee explainer */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                <h3 className="font-black text-gray-900 mb-4">Fee Breakdown per Order</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between py-2 border-b border-gray-100 text-sm">
+                    <span className="text-gray-600">Customer pays</span>
+                    <span className="font-bold text-gray-900">₦10,000 (example)</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2 border-b border-gray-100 text-sm">
+                    <span className="text-gray-600">AfriCart platform fee</span>
+                    <span className="font-bold text-red-600">− ₦1,000 (10%)</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2 text-sm">
+                    <span className="font-bold text-gray-900">You receive</span>
+                    <span className="font-black text-green-600 text-base">₦9,000 (90%)</span>
+                  </div>
+                </div>
+                <div className="mt-4 p-3 rounded-xl bg-orange-50 border border-orange-100 text-xs text-orange-700">
+                  💡 Payouts are processed weekly. Minimum payout threshold is ₦5,000. Payments go directly to your registered bank account.
                 </div>
               </div>
-              <div className="bg-red-50 rounded-2xl border border-red-100 p-5">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-black text-red-800 mb-1">Danger Zone</h4>
-                    <p className="text-sm text-red-600 mb-3">Deleting your account will permanently remove all listings and data.</p>
-                    <button className="px-4 py-2 bg-red-500 text-white rounded-xl text-sm font-bold hover:bg-red-600">Delete Account</button>
-                  </div>
+
+              {/* Order history table */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-gray-100">
+                  <h3 className="font-black text-gray-900">Order History</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50">
+                        {['Order #','Date','Subtotal','Fee (10%)','You Get','Status'].map(h=>(
+                          <th key={h} className="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wide">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orders.filter(o=>o.status==='delivered').map(o=>(
+                        <tr key={o.id} className="border-b border-gray-50 hover:bg-gray-50">
+                          <td className="px-4 py-3 font-mono font-bold text-xs text-gray-700">{o.order_number}</td>
+                          <td className="px-4 py-3 text-gray-500">{new Date(o.created_at).toLocaleDateString()}</td>
+                          <td className="px-4 py-3 font-semibold">₦{o.subtotal.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-red-600 font-semibold">−₦{o.platform_fee.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-green-600 font-black">₦{o.vendor_payout.toLocaleString()}</td>
+                          <td className="px-4 py-3"><span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${STATUS_STYLE[o.status]}`}>{o.status}</span></td>
+                        </tr>
+                      ))}
+                      {orders.filter(o=>o.status==='delivered').length===0&&(
+                        <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400 text-sm">No delivered orders yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
