@@ -47,9 +47,9 @@ export default function Footer() {
             <ul className="space-y-2.5 text-sm text-gray-400">
               {[
                 { label: 'Home', href: '/' },
-                { label: 'Categories', href: '/categories' },
-                { label: 'Browse Businesses', href: '/businesses' },
-                { label: 'List Your Business', href: '/list-business' },
+               { label: 'Food', href: '/' },
+                { label: 'Real Estate', href: '/' },
+                { label: 'Fashion', href: '/' },
               ].map(({ label, href }) => (
                 <li key={href}>
                   <Link href={href} className="hover:text-orange-400 transition-colors">
@@ -65,10 +65,10 @@ export default function Footer() {
             <h3 className="font-semibold text-white mb-4 text-sm uppercase tracking-wider">For Vendors</h3>
             <ul className="space-y-2.5 text-sm text-gray-400">
               {[
-                { label: 'Vendor Dashboard', href: '/dashboard' },
-                { label: 'Become a Vendor', href: '/list-business' },
-                { label: 'Pricing', href: '/pricing' },
-                { label: 'Resources', href: '/resources' },
+                { label: 'Vendor Dashboard', href: '/auth/signup' },
+                { label: 'Food', href: '/' },
+                { label: 'Real Estate', href: '/' },
+                { label: 'Fashion', href: '/' },
               ].map(({ label, href }) => (
                 <li key={href}>
                   <Link href={href} className="hover:text-orange-400 transition-colors">
