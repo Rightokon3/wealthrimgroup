@@ -62,6 +62,11 @@ function LoginInner() {
               <Link href="/auth/signup?role=customer" className="flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-orange-200 text-orange-600 font-bold text-sm hover:bg-orange-50 transition-all">🛒 Customer</Link>
               <Link href="/auth/signup?role=vendor" className="flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-amber-200 text-amber-700 font-bold text-sm hover:bg-amber-50 transition-all">🏪 Vendor</Link>
             </div>
+            <div className="flex justify-end mt-1">
+              <Link href="/auth/forgot-password" className="text-xs text-orange-500 hover:underline font-semibold">
+                 Forgot password?
+              </Link>
+            </div>
           </div>
         </div>
       </motion.div>

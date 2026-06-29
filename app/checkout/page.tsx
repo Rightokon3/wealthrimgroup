@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
 import { PaymentMethod, CATEGORY_META } from '@/types';
 import { Suspense } from 'react';
+import { SavedAddress } from '@/types';
 
 const DELIVERY_FEES: Record<string,number> = {
   lagos:500,abuja:700,'port harcourt':600,ibadan:550,kano:800,
@@ -38,6 +39,8 @@ function CheckoutInner() {
   const [orderId,   setOrderId]   = useState<string|null>(null);
   const [orderNum,  setOrderNum]  = useState('');
   const [error,     setError]     = useState('');
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+const [selectedAddrId, setSelectedAddrId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!al && !isLoggedIn) router.replace('/auth/login?next=/checkout');
@@ -47,6 +50,28 @@ function CheckoutInner() {
     if (profile?.phone) setPhone(profile.phone);
     if (profile?.city)  setCity(profile.city);
   },[profile]);
+
+// Add this new effect right after ↑
+useEffect(() => {
+  if (!user) return;
+  supabase
+    .from('saved_addresses')
+    .select('*')
+    .eq('customer_id', user.id)
+    .order('is_default', { ascending: false })
+    .then(({ data }) => {
+      if (!data) return;
+      setSavedAddresses(data);
+      // Auto-fill default address if fields are empty
+      const def = data.find(a => a.is_default);
+      if (def && !address) {
+        setAddress(def.address);
+        setCity(def.city);
+        setState(def.state ?? '');
+        setSelectedAddrId(def.id);
+      }
+    });
+}, [user]);
 
   const meta        = store ? CATEGORY_META[store.category] : null;
   const isRealEstate= store?.category==='real_estate';
@@ -213,6 +238,50 @@ function CheckoutInner() {
                 <MapPin className="w-4 h-4 text-orange-500"/>
                 {isRealEstate ? 'Your Contact Details' : 'Delivery Address'}
               </h2>
+
+              {/* Saved address picker */}
+{savedAddresses.length > 0 && (
+  <div className="mb-4 space-y-2">
+    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Saved Addresses</p>
+    <div className="space-y-2">
+      {savedAddresses.map(addr => (
+        <button key={addr.id}
+          onClick={() => {
+            setSelectedAddrId(addr.id);
+            setAddress(addr.address);
+            setCity(addr.city);
+            setState(addr.state ?? '');
+          }}
+          className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${
+            selectedAddrId === addr.id
+              ? 'border-orange-400 bg-orange-50'
+              : 'border-gray-200 hover:border-orange-200'
+          }`}>
+          <MapPin className={`w-4 h-4 flex-shrink-0 ${selectedAddrId === addr.id ? 'text-orange-500' : 'text-gray-400'}`} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-gray-900">{addr.label}</span>
+              {addr.is_default && <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-bold">Default</span>}
+            </div>
+            <p className="text-xs text-gray-500 truncate">{addr.address}, {addr.city}</p>
+          </div>
+          {selectedAddrId === addr.id && (
+            <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-xs font-black">✓</span>
+            </div>
+          )}
+        </button>
+      ))}
+      <button
+        onClick={() => { setSelectedAddrId(null); setAddress(''); setCity(''); setState(''); }}
+        className="w-full py-2 text-xs text-gray-400 font-semibold hover:text-orange-500 transition-colors">
+        + Enter a different address
+      </button>
+    </div>
+    <div className="border-t border-gray-100 pt-3" />
+  </div>
+)}
+              
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">

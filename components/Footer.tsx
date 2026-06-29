@@ -47,9 +47,8 @@ export default function Footer() {
             <ul className="space-y-2.5 text-sm text-gray-400">
               {[
                 { label: 'Home', href: '/' },
-               { label: 'Food', href: '/' },
-                { label: 'Real Estate', href: '/' },
-                { label: 'Fashion', href: '/' },
+               { label: 'Food', href: '/categories/food' },
+               
               ].map(({ label, href }) => (
                 <li key={href}>
                   <Link href={href} className="hover:text-orange-400 transition-colors">
@@ -66,9 +65,9 @@ export default function Footer() {
             <ul className="space-y-2.5 text-sm text-gray-400">
               {[
                 { label: 'Vendor Dashboard', href: '/auth/signup' },
-                { label: 'Food', href: '/' },
-                { label: 'Real Estate', href: '/' },
-                { label: 'Fashion', href: '/' },
+                { label: 'Food', href: '/categories/food' },
+                { label: 'Real Estate', href: '/categories/real-estate' },
+                { label: 'Fashion', href: '/categories/fashion' },
               ].map(({ label, href }) => (
                 <li key={href}>
                   <Link href={href} className="hover:text-orange-400 transition-colors">

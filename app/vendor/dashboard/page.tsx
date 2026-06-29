@@ -17,6 +17,7 @@ type Tab = 'overview'|'products'|'orders'|'earnings';
 
 const STATUS_STYLE: Record<OrderStatus,string> = {
   pending:    'bg-amber-100 text-amber-700 border-amber-200',
+  picked_up: 'bg-amber-100 text-amber-700 border-amber-200',
   confirmed:  'bg-blue-100 text-blue-700 border-blue-200',
   preparing:  'bg-purple-100 text-purple-700 border-purple-200',
   ready:      'bg-indigo-100 text-indigo-700 border-indigo-200',
