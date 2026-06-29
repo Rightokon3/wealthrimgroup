@@ -8,9 +8,10 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Order, OrderStatus, CATEGORY_META } from '@/types';
 
-const STATUS_STEPS: OrderStatus[] = ['pending','confirmed','preparing','ready','on_the_way','delivered'];
+const STATUS_STEPS: OrderStatus[] = ['picked_up' ,'pending','confirmed','preparing','ready','on_the_way','delivered'];
 
 const STATUS_META: Record<OrderStatus,{label:string;icon:React.ReactNode;color:string}> = {
+  picked_up:  { label:'Picked Up',    icon:<CheckCircle className="w-4 h-4"/>,  color:'bg-green-100 text-green-700 border-green-200' },
   pending:    { label:'Pending',      icon:<Clock className="w-4 h-4"/>,        color:'bg-amber-100 text-amber-700 border-amber-200' },
   confirmed:  { label:'Confirmed',    icon:<CheckCircle className="w-4 h-4"/>,  color:'bg-blue-100 text-blue-700 border-blue-200' },
   preparing:  { label:'Preparing',    icon:<Package className="w-4 h-4"/>,      color:'bg-purple-100 text-purple-700 border-purple-200' },
