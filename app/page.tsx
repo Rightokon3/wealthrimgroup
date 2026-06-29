@@ -5,13 +5,15 @@ import { motion } from 'framer-motion';
 import {
   Search, MapPin, Clock, Star, ChevronRight, ShoppingCart,
   Utensils, Home as HomeIcon, Shirt, Shield, Zap, TrendingUp,
-  ArrowRight, Store as StoreIcon
+  ArrowRight, Store as StoreIcon,
+  Bike
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Store, CATEGORY_META, StoreCategory } from '@/types';
 import { useCart } from '@/contexts/CartContext';
 import { Business } from '@/types';
 import { BusinessCategory } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 const CATEGORIES: { value: StoreCategory; emoji: string; label: string; bg: string; text: string }[] = [
   { value:'food',        emoji:'🍛', label:'Food & Delivery',  bg:'bg-orange-50 border-orange-200', text:'text-orange-700' },
@@ -89,6 +91,9 @@ export default function HomePage() {
    const [featuredFood, setFeaturedFood] = useState<Business[]>([]);
   const [featuredFashion, setFeaturedFashion] = useState<Business[]>([]);
   const [featuredRealEstate, setFeaturedRealEstate] = useState<Business[]>([]);
+
+  const { profile } = useAuth();
+  const isVendorOrAdmin = profile?.role === 'vendor' || profile?.role === 'admin';
 
   useEffect(() => { fetchStores(); }, [city, activeCat]);
 
@@ -322,48 +327,85 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* How it works */}
-        <div className="mt-16 bg-gray-950 rounded-3xl p-8 md:p-12 text-white">
-          <div className="text-center mb-10">
-            <span className="text-orange-400 font-bold text-sm uppercase tracking-widest">Simple & Fast</span>
-            <h2 className="text-3xl font-black mt-2 mb-3">How Drovo Works</h2>
-          </div>
-          <div className="grid md:grid-cols-3 gap-6">
-            {[
-              { step:'01', icon:'🔍', title:'Browse & Discover', desc:'Find food, properties and fashion from verified local vendors in your city.' },
-              { step:'02', icon:'🛒', title:'Add & Order', desc:'Add items to your cart and checkout with your delivery address. 10% platform fee applies.' },
-              { step:'03', icon:'🚀', title:'Track & Receive', desc:'Track your order in real-time. Vendor receives 90% after Drovo deducts its 10% fee.' },
-            ].map((s,i)=>(
-              <div key={i} className="relative bg-gray-900 rounded-2xl p-6 border border-gray-800">
-                <div className="text-5xl font-black text-gray-800 absolute top-4 right-5 leading-none">{s.step}</div>
-                <div className="text-3xl mb-4">{s.icon}</div>
-                <h3 className="text-lg font-black mb-2">{s.title}</h3>
-                <p className="text-gray-400 text-sm leading-relaxed">{s.desc}</p>
-              </div>
-            ))}
-          </div>
+       {/* How it works — visible to everyone */}
+<div className="mt-16 bg-gray-950 rounded-3xl p-8 md:p-12 text-white">
+  <div className="text-center mb-10">
+    <span className="text-orange-400 font-bold text-sm uppercase tracking-widest">Simple & Fast</span>
+    <h2 className="text-3xl font-black mt-2 mb-3">How Drovo Works</h2>
+  </div>
+  <div className="grid md:grid-cols-3 gap-6">
+    {[
+      { step:'01', icon:'🔍', title:'Browse & Discover', desc:'Find food, properties and fashion from verified local vendors in your city.' },
+      { step:'02', icon:'🛒', title:'Add & Order',       desc:'Add items to your cart and checkout with your delivery address.' },
+      { step:'03', icon:'🚀', title:'Track & Receive',   desc:'Track your order in real-time and receive it at your doorstep.' },
+    ].map((s, i) => (
+      <div key={i} className="relative bg-gray-900 rounded-2xl p-6 border border-gray-800">
+        <div className="text-5xl font-black text-gray-800 absolute top-4 right-5 leading-none">{s.step}</div>
+        <div className="text-3xl mb-4">{s.icon}</div>
+        <h3 className="text-lg font-black mb-2">{s.title}</h3>
+        <p className="text-gray-400 text-sm leading-relaxed">{s.desc}</p>
+      </div>
+    ))}
+  </div>
 
-          {/* Fee explainer */}
-          <div className="mt-8 bg-gradient-to-r from-orange-500/20 to-red-500/20 rounded-2xl p-5 border border-orange-500/30">
-            <div className="flex items-center gap-3 mb-3">
-              <TrendingUp className="w-5 h-5 text-orange-400"/>
-              <span className="font-black text-white">Drovo Fee Structure</span>
-            </div>
-            <div className="grid sm:grid-cols-3 gap-3 text-sm">
-              {[
-                { label:'Customer Pays', value:'₦10,000', sub:'Full order amount' },
-                { label:'Drovo (10%)', value:'₦1,000',  sub:'Platform fee' },
-                { label:'Vendor Gets (90%)', value:'₦9,000',  sub:'Paid to vendor' },
-              ].map(r=>(
-                <div key={r.label} className="bg-white/10 rounded-xl p-3 text-center">
-                  <div className="font-black text-white text-xl">{r.value}</div>
-                  <div className="text-white font-semibold text-xs mt-0.5">{r.label}</div>
-                  <div className="text-white/50 text-xs">{r.sub}</div>
-                </div>
-              ))}
-            </div>
+  {/* Fee explainer — vendors and admins only */}
+  {isVendorOrAdmin && (
+    <div className="mt-8 bg-gradient-to-r from-orange-500/20 to-red-500/20 rounded-2xl p-5 border border-orange-500/30">
+      <div className="flex items-center gap-3 mb-3">
+        <TrendingUp className="w-5 h-5 text-orange-400" />
+        <span className="font-black text-white">Drovo Fee Structure</span>
+      </div>
+      <div className="grid sm:grid-cols-3 gap-3 text-sm">
+        {[
+          { label: 'Customer Pays',      value: '₦10,000', sub: 'Full order amount' },
+          { label: 'Drovo (10%)',        value: '₦1,000',  sub: 'Platform fee' },
+          { label: 'Vendor Gets (90%)', value: '₦9,000',  sub: 'Paid to vendor' },
+        ].map(r => (
+          <div key={r.label} className="bg-white/10 rounded-xl p-3 text-center">
+            <div className="font-black text-white text-xl">{r.value}</div>
+            <div className="text-white font-semibold text-xs mt-0.5">{r.label}</div>
+            <div className="text-white/50 text-xs">{r.sub}</div>
           </div>
-        </div>
+        ))}
+      </div>
+    </div>
+  )}
+</div>
+
+{/* Vendor CTA — vendors and admins only */}
+{isVendorOrAdmin && (
+  <div className="mt-8 bg-gradient-to-r from-orange-500 to-red-600 rounded-3xl p-8 text-center text-white">
+    <h2 className="text-2xl md:text-3xl font-black mb-3">Ready to start selling?</h2>
+    <p className="text-orange-100 mb-6 max-w-xl mx-auto text-sm">
+      Join hundreds of vendors already selling food, properties and fashion on Drovo.
+    </p>
+    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+      <Link href="/auth/signup?role=vendor"
+        className="px-8 py-3.5 bg-white text-orange-600 rounded-2xl font-black hover:bg-orange-50 transition-all shadow-xl">
+        Start Selling — Free
+      </Link>
+      <Link href="/auth/login"
+        className="px-8 py-3.5 bg-white/15 text-white border border-white/30 rounded-2xl font-bold hover:bg-white/25 transition-all">
+        Sign In
+      </Link>
+    </div>
+  </div>
+)}
+
+{/* Rider CTA — visible to everyone who isn't a rider */}
+{profile?.role !== 'rider' && (
+  <div className="mt-8 bg-gradient-to-r from-green-600 to-emerald-600 rounded-3xl p-8 text-center text-white">
+    <div className="text-4xl mb-3">🏍️</div>
+    <h2 className="text-2xl md:text-3xl font-black mb-3">Earn money as a Rider</h2>
+    <p className="text-green-100 mb-6 max-w-xl mx-auto text-sm">
+      Join our delivery network and earn on your schedule. Motorcycles, bicycles and cars welcome.
+    </p>
+    <Link href="/rider/signup"
+      className="inline-flex items-center gap-2 px-8 py-3.5 bg-white text-green-700 rounded-2xl font-black hover:bg-green-50 transition-all shadow-xl">
+      <Bike className="w-5 h-5" /> Become a Rider
+    </Link>
+  </div>
+)}
 
         {/* Vendor CTA */}
         <div className="mt-8 bg-gradient-to-r from-orange-500 to-red-600 rounded-3xl p-8 text-center text-white">
