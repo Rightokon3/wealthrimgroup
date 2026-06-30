@@ -64,7 +64,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <Shield className="w-5 h-5 text-white" />
           </div>
           <div>
-            <div className="font-black text-white text-sm">AfriCart</div>
+            <div className="font-black text-white text-sm">Drovo</div>
             <div className="text-xs text-orange-400 font-bold">Admin Panel</div>
           </div>
         </div>
