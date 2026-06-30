@@ -1,8 +1,8 @@
 import CategoryProductGrid from '@/components/CategoryProductGrid';
 
 export const metadata = {
-  title: 'Food & Delivery — AfriCart',
-  description: 'Browse menu items from every restaurant and food vendor on AfriCart.',
+  title: 'Food & Delivery — Drovo',
+  description: 'Browse menu items from every restaurant and food vendor on Drovo.',
 };
 
 export default function FoodCategoryPage() {
