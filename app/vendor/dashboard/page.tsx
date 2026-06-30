@@ -198,12 +198,12 @@ export default function VendorDashboard() {
               {/* Earnings explanation */}
               <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-2xl border border-orange-100 p-5">
                 <h3 className="font-black text-gray-900 mb-3 flex items-center gap-2">
-                  <Percent className="w-4 h-4 text-orange-500"/> How AfriCart Fees Work
+                  <Percent className="w-4 h-4 text-orange-500"/> How Drovo Fees Work
                 </h3>
                 <div className="grid sm:grid-cols-3 gap-4 text-sm">
                   {[
                     { label:'Customer Pays', value:'₦10,000', color:'text-gray-700' },
-                    { label:'AfriCart Fee (10%)', value:'− ₦1,000', color:'text-red-600' },
+                    { label:'Drovo Fee (10%)', value:'− ₦1,000', color:'text-red-600' },
                     { label:'You Receive (90%)', value:'₦9,000', color:'text-green-600' },
                   ].map(r => (
                     <div key={r.label} className="bg-white rounded-xl p-3 text-center border border-orange-100">

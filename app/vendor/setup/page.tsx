@@ -325,7 +325,7 @@ function VendorSetupInner() {
                 <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
                   <p className="text-amber-800 text-sm font-bold mb-1">💰 Platform Commission</p>
                   <p className="text-amber-700 text-xs leading-relaxed">
-                    AfriCart charges a <strong>10% platform fee</strong> on every sale. You receive <strong>90%</strong> of each order value. Payouts are processed within 24–48 hours of order completion to your registered bank account.
+                    Drovo charges a <strong>10% platform fee</strong> on every sale. You receive <strong>90%</strong> of each order value. Payouts are processed within 24–48 hours of order completion to your registered bank account.
                   </p>
                 </div>
 
