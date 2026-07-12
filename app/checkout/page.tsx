@@ -40,7 +40,8 @@ function CheckoutInner() {
   const [orderNum,  setOrderNum]  = useState('');
   const [error,     setError]     = useState('');
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
-const [selectedAddrId, setSelectedAddrId] = useState<string | null>(null);
+  const [selectedAddrId, setSelectedAddrId] = useState<string | null>(null);
+  const [storeName, setStoreName] = useState(''); 
 
   useEffect(() => {
     if (!al && !isLoggedIn) router.replace('/auth/login?next=/checkout');
@@ -124,12 +125,26 @@ useEffect(() => {
         image_url:     i.product.image_url??null,
       }));
 
-      const { error:iErr } = await supabase.from('order_items').insert(orderItems);
-      if (iErr) throw new Error(iErr.message);
+      const { error: iErr } = await supabase.from('order_items').insert(orderItems);
+   if (iErr) throw new Error(iErr.message);
 
-      clearCart();
-      setOrderId(order.id);
-      setOrderNum(order.order_number);
+// ── Notify vendor via email ──────────────────────────
+// Fire and forget — don't block the success screen if email fails
+fetch('/api/notify-vendor', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ orderId: order.id }),
+}).catch(err => console.warn('Email notification failed:', err));
+// ────────────────────────────────────────────────────
+
+// clearCart();
+// setOrderId(order.id);
+// setOrderNum(order.order_number);
+setStoreName(store?.name ?? '');
+clearCart();
+setOrderId(order.id);
+setOrderNum(order.order_number);
+
     } catch(e:any) {
       setError(e.message??'Failed to place order. Please try again.');
     } finally {
@@ -152,8 +167,9 @@ useEffect(() => {
         </h2>
         <p className="text-gray-500 mb-2">
           {isRealEstate
-            ? `Your viewing request has been sent to ${store?.name}.`
-            : `Your order has been sent to ${store?.name}.`}
+          ? `Your viewing request has been sent to ${storeName}.`
+           : `Your order has been sent to ${storeName}.`
+          }
         </p>
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm mb-6 text-left space-y-2">
           <div className="flex justify-between text-sm">
