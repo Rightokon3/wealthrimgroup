@@ -1,95 +1,111 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MapPin, Phone, ShoppingCart, ChevronRight, CreditCard,
-  Banknote, Smartphone, CheckCircle, Clock, AlertCircle,
-  Minus, Plus, Shield, Calendar
+  Banknote, Smartphone, CheckCircle, AlertCircle,
+  Shield, Calendar, Navigation
 } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
+import { calculateDeliveryFee } from '@/lib/deliveryFee';
 import { PaymentMethod, CATEGORY_META } from '@/types';
-import { Suspense } from 'react';
-import { SavedAddress } from '@/types';
 
-const DELIVERY_FEES: Record<string,number> = {
-  lagos:500,abuja:700,'port harcourt':600,ibadan:550,kano:800,
-  accra:1200,nairobi:1500,default:1000
-};
-function getDeliveryFee(city:string):number {
-  return DELIVERY_FEES[city.toLowerCase()]??DELIVERY_FEES.default;
+interface SavedAddress {
+  id: string; label: string; address: string;
+  city: string; state: string | null; is_default: boolean;
 }
 
 function CheckoutInner() {
   const router  = useRouter();
-  const { user, profile, isLoggedIn, loading:al } = useAuth();
+  const { user, profile, isLoggedIn, loading: al } = useAuth();
   const { items, store, subtotal, totalItems, clearCart } = useCart();
 
-  const [address,   setAddress]   = useState('');
-  const [city,      setCity]      = useState('');
-  const [state,     setState]     = useState('');
-  const [phone,     setPhone]     = useState('');
-  const [note,      setNote]      = useState('');
-  const [scheduled, setScheduled] = useState('');
-  const [payment,   setPayment]   = useState<PaymentMethod>('cash_on_delivery');
-  const [placing,   setPlacing]   = useState(false);
-  const [orderId,   setOrderId]   = useState<string|null>(null);
-  const [orderNum,  setOrderNum]  = useState('');
-  const [error,     setError]     = useState('');
+  const [address,        setAddress]        = useState('');
+  const [city,           setCity]           = useState('');
+  const [state,          setState]          = useState('');
+  const [phone,          setPhone]          = useState('');
+  const [note,           setNote]           = useState('');
+  const [scheduled,      setScheduled]      = useState('');
+  const [payment,        setPayment]        = useState<PaymentMethod>('cash_on_delivery');
+  const [placing,        setPlacing]        = useState(false);
+  const [orderId,        setOrderId]        = useState<string | null>(null);
+  const [orderNum,       setOrderNum]       = useState('');
+  const [storeName,      setStoreName]      = useState('');
+  const [error,          setError]          = useState('');
+  const [locating,       setLocating]       = useState(false);
+  const [customerCoords, setCustomerCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [selectedAddrId, setSelectedAddrId] = useState<string | null>(null);
-  const [storeName, setStoreName] = useState(''); 
 
+  // ── Auth guard ────────────────────────────────────────────────
   useEffect(() => {
     if (!al && !isLoggedIn) router.replace('/auth/login?next=/checkout');
-  },[al,isLoggedIn,router]);
+  }, [al, isLoggedIn, router]);
 
+  // ── Pre-fill from profile ─────────────────────────────────────
   useEffect(() => {
     if (profile?.phone) setPhone(profile.phone);
     if (profile?.city)  setCity(profile.city);
-  },[profile]);
+  }, [profile]);
 
-// Add this new effect right after ↑
-useEffect(() => {
-  if (!user) return;
-  supabase
-    .from('saved_addresses')
-    .select('*')
-    .eq('customer_id', user.id)
-    .order('is_default', { ascending: false })
-    .then(({ data }) => {
-      if (!data) return;
-      setSavedAddresses(data);
-      // Auto-fill default address if fields are empty
-      const def = data.find(a => a.is_default);
-      if (def && !address) {
-        setAddress(def.address);
-        setCity(def.city);
-        setState(def.state ?? '');
-        setSelectedAddrId(def.id);
-      }
-    });
-}, [user]);
+  // ── Load saved addresses, auto-select default ─────────────────
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('saved_addresses')
+      .select('*')
+      .eq('profile_id', user.id)
+      .order('is_default', { ascending: false })
+      .then(({ data }) => {
+        if (!data) return;
+        setSavedAddresses(data);
+        const def = data.find((a: SavedAddress) => a.is_default);
+        if (def && !address) {
+          setAddress(def.address);
+          setCity(def.city);
+          setState(def.state ?? '');
+          setSelectedAddrId(def.id);
+        }
+      });
+  }, [user]);
 
-  const meta        = store ? CATEGORY_META[store.category] : null;
-  const isRealEstate= store?.category==='real_estate';
-  const deliveryFee = isRealEstate ? 0 : (city ? getDeliveryFee(city) : 1000);
-  const platformFee = Math.round(subtotal * 0.10);
-  const total       = subtotal + deliveryFee;
+  // ── Live delivery fee (distance-based) ───────────────────────
+  const feeResult = useMemo(() => {
+    if (!store || !city.trim()) return null;
+    return calculateDeliveryFee(city, store.city, customerCoords, null);
+  }, [city, store, customerCoords]);
 
+  const isRealEstate = store?.category === 'real_estate';
+  const deliveryFee  = isRealEstate ? 0 : (feeResult?.fee ?? 3000);
+  const platformFee  = Math.round(subtotal * 0.10);
+  const total        = subtotal + deliveryFee;
+
+  // ── GPS location ──────────────────────────────────────────────
+  function detectLocation() {
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      pos => { setCustomerCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setLocating(false); },
+      ()  => setLocating(false),
+      { timeout: 8000 }
+    );
+  }
+
+  // ── Place order ───────────────────────────────────────────────
   const placeOrder = async () => {
-    if (!user||!store) return;
+    if (!user || !store) return;
     if (!address.trim()) { setError('Please enter your delivery address.'); return; }
     if (!city.trim())    { setError('Please enter your city.'); return; }
     if (!phone.trim())   { setError('Please enter your phone number.'); return; }
-    if (items.length===0){ setError('Your cart is empty.'); return; }
+    if (items.length === 0) { setError('Your cart is empty.'); return; }
 
     setPlacing(true); setError('');
     try {
-      const { data:order, error:oErr } = await supabase
+      const { data: order, error: oErr } = await supabase
         .from('orders')
         .insert([{
           customer_id:      user.id,
@@ -97,13 +113,12 @@ useEffect(() => {
           delivery_type:    isRealEstate ? 'viewing' : 'delivery',
           delivery_address: address,
           delivery_city:    city,
-          delivery_state:   state||null,
+          delivery_state:   state || null,
           customer_phone:   phone,
-          delivery_note:    note||null,
-          scheduled_at:     scheduled||null,
+          delivery_note:    note || null,
+          scheduled_at:     scheduled || null,
           subtotal,
           delivery_fee:     deliveryFee,
-          // platform_fee and vendor_payout are calculated by DB trigger
           total,
           payment_method:   payment,
           payment_status:   'pending',
@@ -113,89 +128,76 @@ useEffect(() => {
 
       if (oErr) throw new Error(oErr.message);
 
-      const orderItems = items.map(i => ({
-        order_id:      order.id,
-        product_id:    i.product.id,
-        name:          i.product.name,
-        price:         i.product.price,
-        quantity:      i.quantity,
-        subtotal:      i.product.price * i.quantity,
-        selected_size: i.selected_size??null,
-        selected_color:i.selected_color??null,
-        image_url:     i.product.image_url??null,
-      }));
+      const { error: iErr } = await supabase.from('order_items').insert(
+        items.map(i => ({
+          order_id:       order.id,
+          product_id:     i.product.id,
+          name:           i.product.name,
+          price:          i.product.price,
+          quantity:       i.quantity,
+          subtotal:       i.product.price * i.quantity,
+          selected_size:  i.selected_size  ?? null,
+          selected_color: i.selected_color ?? null,
+          image_url:      i.product.image_url ?? null,
+        }))
+      );
+      if (iErr) throw new Error(iErr.message);
 
-      const { error: iErr } = await supabase.from('order_items').insert(orderItems);
-   if (iErr) throw new Error(iErr.message);
+      // ── Notify vendor via email (fire-and-forget) ─────────────
+      fetch('/api/notify-vendor', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ orderId: order.id }),
+      }).catch(err => console.warn('Vendor email notification failed:', err));
 
-// ── Notify vendor via email ──────────────────────────
-// Fire and forget — don't block the success screen if email fails
-fetch('/api/notify-vendor', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ orderId: order.id }),
-}).catch(err => console.warn('Email notification failed:', err));
-// ────────────────────────────────────────────────────
-
-// clearCart();
-// setOrderId(order.id);
-// setOrderNum(order.order_number);
-setStoreName(store?.name ?? '');
-clearCart();
-setOrderId(order.id);
-setOrderNum(order.order_number);
-
-    } catch(e:any) {
-      setError(e.message??'Failed to place order. Please try again.');
+      // ── Success ───────────────────────────────────────────────
+      setStoreName(store.name ?? '');
+      clearCart();
+      setOrderId(order.id);
+      setOrderNum(order.order_number);
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to place order. Please try again.');
     } finally {
       setPlacing(false);
     }
   };
 
-  if (al) return <div className="min-h-screen pt-[64px] flex items-center justify-center"><div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"/></div>;
+  // ── Loading ───────────────────────────────────────────────────
+  if (al) return (
+    <div className="min-h-screen pt-[64px] flex items-center justify-center">
+      <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
-  // ── Success ────────────────────────────────────────────────────
+  // ── Success screen ────────────────────────────────────────────
   if (orderId) return (
     <div className="min-h-screen pt-[64px] flex items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
-      <motion.div initial={{scale:.85,opacity:0}} animate={{scale:1,opacity:1}} className="text-center max-w-md w-full">
-        <motion.div initial={{scale:0}} animate={{scale:1}} transition={{delay:.2,type:'spring',stiffness:200}}
+      <motion.div initial={{ scale: .85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center max-w-md w-full">
+        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: .2, type: 'spring', stiffness: 200 }}
           className="w-24 h-24 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-green-200">
-          <CheckCircle className="w-12 h-12 text-white"/>
+          <CheckCircle className="w-12 h-12 text-white" />
         </motion.div>
         <h2 className="text-3xl font-black text-gray-900 mb-2">
           {isRealEstate ? 'Viewing Booked! 🏠' : 'Order Placed! 🎉'}
         </h2>
-        <p className="text-gray-500 mb-2">
-          {isRealEstate
-          ? `Your viewing request has been sent to ${storeName}.`
-           : `Your order has been sent to ${storeName}.`
-          }
+        <p className="text-gray-500 mb-5">
+          {isRealEstate ? 'Your viewing request has been sent to' : 'Your order has been sent to'}{' '}
+          <span className="font-bold text-gray-700">{storeName}</span>.
         </p>
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm mb-6 text-left space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Order #</span>
-            <span className="font-mono font-black text-xs text-gray-700">{orderNum}</span>
+          <div className="flex justify-between text-sm"><span className="text-gray-500">Order #</span><span className="font-mono font-black text-xs">{orderNum}</span></div>
+          <div className="flex justify-between text-sm"><span className="text-gray-500">Subtotal</span><span className="font-bold">₦{subtotal.toLocaleString()}</span></div>
+          <div className="flex justify-between text-sm"><span className="text-gray-500">Platform fee (10%)</span><span className="font-bold text-orange-600">₦{platformFee.toLocaleString()}</span></div>
+          {!isRealEstate && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Delivery {feeResult && <span className="text-xs text-gray-400">({feeResult.tier})</span>}</span>
+              <span className="font-bold">₦{deliveryFee.toLocaleString()}</span>
+            </div>
+          )}
+          <div className="flex justify-between font-black text-gray-900 text-base pt-2 border-t border-gray-100">
+            <span>Total</span><span>₦{total.toLocaleString()}</span>
           </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Subtotal</span>
-            <span className="font-bold">₦{subtotal.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Platform fee (10%)</span>
-            <span className="font-bold text-orange-600">₦{platformFee.toLocaleString()}</span>
-          </div>
-          {!isRealEstate&&<div className="flex justify-between text-sm">
-            <span className="text-gray-500">Delivery</span>
-            <span className="font-bold">₦{deliveryFee.toLocaleString()}</span>
-          </div>}
-          <div className="flex justify-between text-sm border-t border-gray-100 pt-2">
-            <span className="font-black text-gray-900">Total</span>
-            <span className="font-black text-gray-900">₦{total.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Payment</span>
-            <span className="font-semibold capitalize">{payment.replace(/_/g,' ')}</span>
-          </div>
+          <div className="flex justify-between text-sm"><span className="text-gray-500">Payment</span><span className="font-semibold capitalize">{payment.replace(/_/g, ' ')}</span></div>
         </div>
         <div className="flex gap-3">
           <Link href="/orders" className="flex-1 py-3 rounded-2xl border-2 border-orange-200 text-orange-600 font-bold text-sm hover:bg-orange-50">Track Order</Link>
@@ -205,14 +207,13 @@ setOrderNum(order.order_number);
     </div>
   );
 
-  // ── Empty cart ─────────────────────────────────────────────────
-  if (totalItems===0) return (
+  // ── Empty cart ────────────────────────────────────────────────
+  if (totalItems === 0) return (
     <div className="min-h-screen pt-[64px] flex items-center justify-center bg-gray-50 px-4">
       <div className="text-center">
-        <ShoppingCart className="w-14 h-14 text-gray-200 mx-auto mb-4"/>
+        <ShoppingCart className="w-14 h-14 text-gray-200 mx-auto mb-4" />
         <h2 className="text-xl font-black text-gray-800 mb-2">Your cart is empty</h2>
-        <p className="text-gray-400 text-sm mb-5">Add items before checking out.</p>
-        <Link href="/" className="px-6 py-3 bg-orange-500 text-white rounded-2xl font-bold text-sm hover:bg-orange-600">Browse Stores</Link>
+        <Link href="/" className="inline-block px-6 py-3 mt-3 bg-orange-500 text-white rounded-2xl font-bold text-sm hover:bg-orange-600">Browse Stores</Link>
       </div>
     </div>
   );
@@ -224,134 +225,159 @@ setOrderNum(order.order_number);
       {/* Header */}
       <div className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-[900px] mx-auto px-6 py-4 flex items-center gap-3">
-          <Link href={store?`/store/${store.id}`:'/'}
-            className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
-            <ChevronRight className="w-4 h-4 rotate-180 text-gray-600"/>
+          <Link href={store ? `/store/${store.id}` : '/'} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200">
+            <ChevronRight className="w-4 h-4 rotate-180 text-gray-600" />
           </Link>
           <div>
-            <h1 className="font-black text-gray-900">
-              {isRealEstate ? 'Book Viewing' : 'Checkout'}
-            </h1>
-            <p className="text-xs text-gray-400">{store?.name} · {totalItems} item{totalItems>1?'s':''}</p>
+            <h1 className="font-black text-gray-900">{isRealEstate ? 'Book Viewing' : 'Checkout'}</h1>
+            <p className="text-xs text-gray-400">{store?.name} · {totalItems} item{totalItems > 1 ? 's' : ''}</p>
           </div>
         </div>
       </div>
 
       <div className="max-w-[900px] mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-5 gap-6">
-          {/* Form */}
+
+          {/* ── LEFT: Form ────────────────────────────────────── */}
           <div className="lg:col-span-3 space-y-5">
-            {error&&(
+            {error && (
               <div className="flex items-start gap-3 p-4 rounded-2xl bg-red-50 border border-red-200">
-                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5"/>
+                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                 <p className="text-red-600 text-sm font-medium">{error}</p>
               </div>
             )}
 
-            {/* Address */}
+            {/* Address card */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <h2 className="font-black text-gray-900 mb-4 flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-orange-500"/>
-                {isRealEstate ? 'Your Contact Details' : 'Delivery Address'}
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-black text-gray-900 flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-orange-500" />
+                  {isRealEstate ? 'Your Contact Details' : 'Delivery Address'}
+                </h2>
+                {!isRealEstate && (
+                  <button type="button" onClick={detectLocation} disabled={locating}
+                    className="flex items-center gap-1.5 text-xs font-bold text-orange-600 bg-orange-50 border border-orange-100 px-3 py-1.5 rounded-full hover:bg-orange-100 disabled:opacity-60 transition-all">
+                    {locating
+                      ? <><div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />Locating...</>
+                      : <><Navigation className="w-3 h-3" />Use my location</>
+                    }
+                  </button>
+                )}
+              </div>
 
-              {/* Saved address picker */}
-{savedAddresses.length > 0 && (
-  <div className="mb-4 space-y-2">
-    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Saved Addresses</p>
-    <div className="space-y-2">
-      {savedAddresses.map(addr => (
-        <button key={addr.id}
-          onClick={() => {
-            setSelectedAddrId(addr.id);
-            setAddress(addr.address);
-            setCity(addr.city);
-            setState(addr.state ?? '');
-          }}
-          className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${
-            selectedAddrId === addr.id
-              ? 'border-orange-400 bg-orange-50'
-              : 'border-gray-200 hover:border-orange-200'
-          }`}>
-          <MapPin className={`w-4 h-4 flex-shrink-0 ${selectedAddrId === addr.id ? 'text-orange-500' : 'text-gray-400'}`} />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-gray-900">{addr.label}</span>
-              {addr.is_default && <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-bold">Default</span>}
-            </div>
-            <p className="text-xs text-gray-500 truncate">{addr.address}, {addr.city}</p>
-          </div>
-          {selectedAddrId === addr.id && (
-            <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-xs font-black">✓</span>
-            </div>
-          )}
-        </button>
-      ))}
-      <button
-        onClick={() => { setSelectedAddrId(null); setAddress(''); setCity(''); setState(''); }}
-        className="w-full py-2 text-xs text-gray-400 font-semibold hover:text-orange-500 transition-colors">
-        + Enter a different address
-      </button>
-    </div>
-    <div className="border-t border-gray-100 pt-3" />
-  </div>
-)}
-              
+              {/* Saved addresses */}
+              {savedAddresses.length > 0 && (
+                <div className="mb-4 space-y-2">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Saved Addresses</p>
+                  {savedAddresses.map(addr => (
+                    <button key={addr.id} type="button"
+                      onClick={() => { setSelectedAddrId(addr.id); setAddress(addr.address); setCity(addr.city); setState(addr.state ?? ''); }}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${selectedAddrId === addr.id ? 'border-orange-400 bg-orange-50' : 'border-gray-200 hover:border-orange-200'}`}>
+                      <MapPin className={`w-4 h-4 flex-shrink-0 ${selectedAddrId === addr.id ? 'text-orange-500' : 'text-gray-400'}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-gray-900">{addr.label}</span>
+                          {addr.is_default && <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-bold">Default</span>}
+                        </div>
+                        <p className="text-xs text-gray-500 truncate">{addr.address}, {addr.city}</p>
+                      </div>
+                      {selectedAddrId === addr.id && <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0"><span className="text-white text-xs font-black">✓</span></div>}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => { setSelectedAddrId(null); setAddress(''); setCity(''); setState(''); }}
+                    className="w-full py-2 text-xs text-gray-400 font-semibold hover:text-orange-500 transition-colors">
+                    + Enter a different address
+                  </button>
+                  <div className="border-t border-gray-100" />
+                </div>
+              )}
+
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
-                    {isRealEstate ? 'Your Address' : 'Delivery Address'} *
-                  </label>
-                  <input type="text" value={address} onChange={e=>setAddress(e.target.value)}
-                    placeholder={isRealEstate?"Your current address":"e.g. 14 Admiralty Way, Lekki"} className={ic}/>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">{isRealEstate ? 'Your Address' : 'Street Address'} *</label>
+                  <input type="text" value={address} onChange={e => setAddress(e.target.value)}
+                    placeholder={isRealEstate ? "Your current address" : "e.g. 14 Admiralty Way, Lekki"} className={ic} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">City *</label>
-                    <input type="text" value={city} onChange={e=>setCity(e.target.value)} placeholder="Lagos" className={ic}/>
+                    <input type="text" value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Lagos" className={ic} />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">State</label>
-                    <input type="text" value={state} onChange={e=>setState(e.target.value)} placeholder="Lagos State" className={ic}/>
+                    <input type="text" value={state} onChange={e => setState(e.target.value)} placeholder="e.g. Lagos State" className={ic} />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Phone Number *</label>
-                  <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+234 800 000 0000" className={ic}/>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Phone *</label>
+                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+234 800 000 0000" className={ic} />
                 </div>
-
-                {/* Real estate: schedule viewing */}
                 {isRealEstate && (
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
-                      <Calendar className="w-3.5 h-3.5 inline mr-1"/>Preferred Viewing Date & Time
+                      <Calendar className="w-3.5 h-3.5 inline mr-1" />Preferred Viewing Date & Time
                     </label>
-                    <input type="datetime-local" value={scheduled} onChange={e=>setScheduled(e.target.value)} className={ic}/>
+                    <input type="datetime-local" value={scheduled} onChange={e => setScheduled(e.target.value)} className={ic} />
                   </div>
                 )}
-
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
-                    {isRealEstate ? 'Message / Special Request' : 'Delivery Note'} <span className="normal-case font-normal text-gray-400">(optional)</span>
+                    {isRealEstate ? 'Message / Special Request' : 'Delivery Note'}{' '}
+                    <span className="normal-case font-normal text-gray-400">(optional)</span>
                   </label>
-                  <textarea value={note} onChange={e=>setNote(e.target.value)} rows={2}
-                    placeholder={isRealEstate?"Any questions or special requests...":"e.g. Gate code, landmark, leave at door..."}
-                    className={`${ic} resize-none`}/>
+                  <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+                    placeholder={isRealEstate ? "Any questions or special requests..." : "e.g. Gate code, landmark, leave at door..."}
+                    className={`${ic} resize-none`} />
                 </div>
               </div>
             </div>
 
-            {/* Delivery fee info — food/fashion only */}
-            {!isRealEstate && city && (
-              <motion.div initial={{opacity:0,y:-8}} animate={{opacity:1,y:0}}
-                className="bg-orange-50 rounded-2xl border border-orange-100 p-4 flex items-center gap-3">
-                <MapPin className="w-5 h-5 text-orange-500 flex-shrink-0"/>
-                <div>
-                  <p className="text-sm font-bold text-orange-800">Delivering to {city}</p>
-                  <p className="text-xs text-orange-600">Delivery fee: <span className="font-black">₦{deliveryFee.toLocaleString()}</span></p>
-                </div>
-              </motion.div>
+            {/* Live delivery fee card */}
+            {!isRealEstate && city && store && (
+              <AnimatePresence>
+                <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+                  className={`rounded-2xl border p-4 ${
+                    feeResult && feeResult.fee < 2000 ? 'bg-green-50 border-green-200'
+                    : feeResult && feeResult.fee < 3000 ? 'bg-orange-50 border-orange-200'
+                    : 'bg-red-50 border-red-200'
+                  }`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <MapPin className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                        <span className="text-sm font-bold text-gray-900">{city} → {store.city}</span>
+                      </div>
+                      {feeResult && (
+                        <p className="text-xs text-gray-500 ml-6">
+                          {feeResult.distanceKm !== null ? `~${feeResult.distanceKm} km away` : feeResult.label}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <div className="font-black text-xl text-gray-900">₦{deliveryFee.toLocaleString()}</div>
+                      {feeResult && (
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                          feeResult.fee < 1500 ? 'bg-green-100 text-green-700'
+                          : feeResult.fee < 2500 ? 'bg-orange-100 text-orange-700'
+                          : 'bg-red-100 text-red-700'
+                        }`}>{feeResult.tier}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-white/60">
+                    <div className="flex justify-between text-xs text-gray-400 mb-1">
+                      <span>₦500</span><span className="font-semibold text-gray-600">Delivery fee</span><span>₦3,000</span>
+                    </div>
+                    <div className="h-2 bg-white/60 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-gradient-to-r from-green-500 to-red-500 transition-all duration-500"
+                        style={{ width: `${Math.min(100, ((deliveryFee - 500) / 2500) * 100)}%` }} />
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1 text-center">
+                      {customerCoords ? '📍 Based on your GPS location' : '🏙 Based on city distance — share location for a more accurate fee'}
+                    </p>
+                  </div>
+                </motion.div>
+              </AnimatePresence>
             )}
 
             {/* Fee breakdown */}
@@ -360,36 +386,43 @@ setOrderNum(order.order_number);
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-gray-500"><span>Items subtotal</span><span>₦{subtotal.toLocaleString()}</span></div>
                 <div className="flex justify-between text-orange-600 font-semibold">
-                  <span className="flex items-center gap-1">AfriCart fee <span className="text-xs text-gray-400">(10%)</span></span>
-                  <span>₦{platformFee.toLocaleString()}</span>
+                  <span>Drovo fee (10%)</span><span>₦{platformFee.toLocaleString()}</span>
                 </div>
-                {!isRealEstate&&<div className="flex justify-between text-gray-500"><span>Delivery fee</span><span>₦{deliveryFee.toLocaleString()}</span></div>}
+                {!isRealEstate && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>Delivery {feeResult ? `(${feeResult.tier})` : ''}</span>
+                    <span>₦{deliveryFee.toLocaleString()}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-black text-gray-900 text-base pt-2 border-t border-gray-100">
                   <span>Total</span><span>₦{total.toLocaleString()}</span>
                 </div>
               </div>
-              <p className="text-xs text-gray-400 mt-3">10% platform fee applies to all orders. Vendors receive the remaining 90%.</p>
+              <div className="mt-3 p-3 rounded-xl bg-gray-50 border border-gray-100 text-xs text-gray-400 space-y-1">
+                <p>• Delivery fee starts at ₦3,000 and reduces the closer you are to the vendor</p>
+                <p>• 10% platform fee is deducted — vendor receives 90%</p>
+              </div>
             </div>
 
             {/* Payment */}
             {!isRealEstate && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
                 <h2 className="font-black text-gray-900 mb-4 flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 text-orange-500"/> Payment Method
+                  <CreditCard className="w-4 h-4 text-orange-500" /> Payment Method
                 </h2>
                 <div className="space-y-3">
                   {[
-                    { value:'cash_on_delivery', label:'Cash on Delivery', desc:'Pay when your order arrives', icon:<Banknote className="w-5 h-5 text-green-600"/> },
-                    { value:'transfer',         label:'Bank Transfer',    desc:'Transfer before delivery',   icon:<Smartphone className="w-5 h-5 text-blue-600"/> },
-                    { value:'card',             label:'Debit / Credit Card', desc:'Pay securely online',     icon:<CreditCard className="w-5 h-5 text-purple-600"/> },
-                  ].map(opt=>(
+                    { value: 'cash_on_delivery', label: 'Cash on Delivery',    desc: 'Pay when your order arrives', icon: <Banknote className="w-5 h-5 text-green-600" /> },
+                    { value: 'transfer',         label: 'Bank Transfer',        desc: 'Transfer before delivery',   icon: <Smartphone className="w-5 h-5 text-blue-600" /> },
+                    { value: 'card',             label: 'Debit / Credit Card',  desc: 'Pay securely online',        icon: <CreditCard className="w-5 h-5 text-purple-600" /> },
+                  ].map(opt => (
                     <label key={opt.value}
-                      className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${payment===opt.value?'border-orange-400 bg-orange-50':'border-gray-200 hover:border-orange-200'}`}>
-                      <input type="radio" name="pay" value={opt.value} checked={payment===opt.value}
-                        onChange={()=>setPayment(opt.value as PaymentMethod)} className="sr-only"/>
+                      className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${payment === opt.value ? 'border-orange-400 bg-orange-50' : 'border-gray-200 hover:border-orange-200'}`}>
+                      <input type="radio" name="pay" value={opt.value} checked={payment === opt.value}
+                        onChange={() => setPayment(opt.value as PaymentMethod)} className="sr-only" />
                       <div className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center flex-shrink-0">{opt.icon}</div>
                       <div className="flex-1"><div className="font-bold text-gray-900 text-sm">{opt.label}</div><div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div></div>
-                      {payment===opt.value&&<div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0"><span className="text-white text-xs font-black">✓</span></div>}
+                      {payment === opt.value && <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0"><span className="text-white text-xs font-black">✓</span></div>}
                     </label>
                   ))}
                 </div>
@@ -397,28 +430,24 @@ setOrderNum(order.order_number);
             )}
           </div>
 
-          {/* Order summary */}
-          <div className="lg:col-span-2">
+          {/* ── RIGHT: Order summary ──────────────────────────── */}
+          <div className="lg:col-span-2 mb-10 lg:mb-0">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm sticky top-24 overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100">
                 <h2 className="font-black text-gray-900 flex items-center gap-2">
-                  <ShoppingCart className="w-4 h-4 text-orange-500"/> Order Summary
+                  <ShoppingCart className="w-4 h-4 text-orange-500" /> Order Summary
                 </h2>
                 <p className="text-xs text-gray-400 mt-0.5">{store?.name}</p>
               </div>
               <div className="px-5 py-4 space-y-3 max-h-64 overflow-y-auto">
-                {items.map(item=>(
+                {items.map(item => (
                   <div key={`${item.product.id}-${item.selected_size}-${item.selected_color}`} className="flex items-center gap-3">
-                    {item.product.image_url&&<img src={item.product.image_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-gray-100"/>}
+                    {item.product.image_url && <img src={item.product.image_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-gray-100" />}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-800 truncate">{item.product.name}</p>
-                      <p className="text-xs text-gray-400">
-                        x{item.quantity}
-                        {item.selected_size&&` · ${item.selected_size}`}
-                        {item.selected_color&&` · ${item.selected_color}`}
-                      </p>
+                      <p className="text-xs text-gray-400">×{item.quantity}{item.selected_size && ` · ${item.selected_size}`}{item.selected_color && ` · ${item.selected_color}`}</p>
                     </div>
-                    <span className="text-sm font-black text-gray-900 flex-shrink-0">₦{(item.product.price*item.quantity).toLocaleString()}</span>
+                    <span className="text-sm font-black text-gray-900 flex-shrink-0">₦{(item.product.price * item.quantity).toLocaleString()}</span>
                   </div>
                 ))}
               </div>
@@ -426,7 +455,12 @@ setOrderNum(order.order_number);
                 <div className="border-t border-gray-100 pt-4 space-y-1.5 text-sm mb-5">
                   <div className="flex justify-between text-gray-500"><span>Subtotal</span><span>₦{subtotal.toLocaleString()}</span></div>
                   <div className="flex justify-between text-orange-600 font-semibold"><span>Drovo fee (10%)</span><span>₦{platformFee.toLocaleString()}</span></div>
-                  {!isRealEstate&&<div className="flex justify-between text-gray-500"><span>Delivery</span><span>₦{deliveryFee.toLocaleString()}</span></div>}
+                  {!isRealEstate && (
+                    <div className="flex justify-between text-gray-500">
+                      <span>Delivery {feeResult && `(${feeResult.tier})`}</span>
+                      <span>₦{deliveryFee.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-black text-gray-900 text-base pt-2 border-t border-gray-100">
                     <span>Total</span><span>₦{total.toLocaleString()}</span>
                   </div>
@@ -434,12 +468,12 @@ setOrderNum(order.order_number);
                 <button onClick={placeOrder} disabled={placing}
                   className="w-full py-4 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-2xl font-black text-base hover:from-orange-600 hover:to-red-700 transition-all shadow-lg shadow-orange-200 disabled:opacity-60 flex items-center justify-center gap-2">
                   {placing
-                    ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"/>Placing...</>
-                    : <><ShoppingCart className="w-5 h-5"/>{isRealEstate?'Book Viewing':'Place Order'} · ₦{total.toLocaleString()}</>
+                    ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />Placing...</>
+                    : <><ShoppingCart className="w-5 h-5" />{isRealEstate ? 'Book Viewing' : 'Place Order'} · ₦{total.toLocaleString()}</>
                   }
                 </button>
                 <div className="flex items-center justify-center gap-1 mt-3 text-xs text-gray-400">
-                  <Shield className="w-3 h-3"/> Secured by Drovo
+                  <Shield className="w-3 h-3" /> Secured by Drovo
                 </div>
               </div>
             </div>
@@ -452,8 +486,8 @@ setOrderNum(order.order_number);
 
 export default function CheckoutPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen pt-[64px] flex items-center justify-center"><div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"/></div>}>
-      <CheckoutInner/>
+    <Suspense fallback={<div className="min-h-screen pt-[64px] flex items-center justify-center"><div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" /></div>}>
+      <CheckoutInner />
     </Suspense>
   );
 }
