@@ -35,7 +35,6 @@ const KEY = 'africart_v2_cart';
 function reducer(state: CartState, action: Action): CartState {
   switch (action.type) {
     case 'ADD': {
-      // Different store — clear cart and start fresh
       if (state.store && state.store.id !== action.store?.id) {
         return {
           store: action.store,
@@ -92,11 +91,9 @@ function writeCart(state: CartState) {
 }
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
-  // Always start empty on the server — avoids hydration mismatch
   const [state, dispatch] = useReducer(reducer, { items: [], store: null });
   const [hydrated, setHydrated] = useState(false);
 
-  // Load from localStorage only after first client render
   useEffect(() => {
     const saved = readCart();
     if (saved.items.length > 0 || saved.store) {
@@ -111,8 +108,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setHydrated(true);
   }, []);
 
-  // Persist on every change — but only after hydration so we don't overwrite
-  // a valid saved cart with the empty initial state on first render
   useEffect(() => {
     if (!hydrated) return;
     writeCart(state);

@@ -5,13 +5,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   MapPin, Phone, ShoppingCart, ChevronRight, CreditCard,
   Banknote, Smartphone, CheckCircle, AlertCircle,
-  Shield, Calendar, Navigation
+  Shield, Calendar, Navigation, Plus, Minus, Trash2, X, Copy
 } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
 import { calculateDeliveryFee } from '@/lib/deliveryFee';
+import { loadPaystackScript } from '@/lib/paystack';
 import { PaymentMethod, CATEGORY_META } from '@/types';
 
 interface SavedAddress {
@@ -19,10 +20,17 @@ interface SavedAddress {
   city: string; state: string | null; is_default: boolean;
 }
 
+// TODO: replace with your real settlement account details
+const BANK_DETAILS = {
+  accountName:   'Drovo Technologies Ltd',
+  accountNumber: '0000000000',
+  bankName:      'Your Bank Name',
+};
+
 function CheckoutInner() {
   const router  = useRouter();
   const { user, profile, isLoggedIn, loading: al } = useAuth();
-  const { items, store, subtotal, totalItems, clearCart } = useCart();
+  const { items, store, subtotal, totalItems, clearCart, removeItem, updateQty } = useCart();
 
   const [address,        setAddress]        = useState('');
   const [city,           setCity]           = useState('');
@@ -40,6 +48,10 @@ function CheckoutInner() {
   const [customerCoords, setCustomerCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [selectedAddrId, setSelectedAddrId] = useState<string | null>(null);
+
+  // Payment gateway state
+  const [showBankModal, setShowBankModal]   = useState(false);
+  const [copiedField,   setCopiedField]     = useState<string | null>(null);
 
   // ── Auth guard ────────────────────────────────────────────────
   useEffect(() => {
@@ -95,72 +107,152 @@ function CheckoutInner() {
     );
   }
 
-  // ── Place order ───────────────────────────────────────────────
-  const placeOrder = async () => {
-    if (!user || !store) return;
-    if (!address.trim()) { setError('Please enter your delivery address.'); return; }
-    if (!city.trim())    { setError('Please enter your city.'); return; }
-    if (!phone.trim())   { setError('Please enter your phone number.'); return; }
-    if (items.length === 0) { setError('Your cart is empty.'); return; }
+  // ── Payment method change ────────────────────────────────────
+  function handlePaymentChange(value: PaymentMethod) {
+    setPayment(value);
+    if (value === 'transfer') setShowBankModal(true);
+  }
 
+  function copyToClipboard(text: string, field: string) {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 1500);
+  }
+
+  // ── Shared validation ─────────────────────────────────────────
+  function validateForm(): boolean {
+    if (!address.trim()) { setError('Please enter your delivery address.'); return false; }
+    if (!city.trim())    { setError('Please enter your city.'); return false; }
+    if (!phone.trim())   { setError('Please enter your phone number.'); return false; }
+    if (items.length === 0) { setError('Your cart is empty.'); return false; }
+    return true;
+  }
+
+  // ── Create the order in Supabase (called after payment is settled/chosen) ──
+  async function createOrder(paystackRef?: string) {
+    if (!user || !store) return;
+
+    const { data: order, error: oErr } = await supabase
+      .from('orders')
+      .insert([{
+        customer_id:      user.id,
+        store_id:         store.id,
+        delivery_type:    isRealEstate ? 'viewing' : 'delivery',
+        delivery_address: address,
+        delivery_city:    city,
+        delivery_state:   state || null,
+        customer_phone:   phone,
+        delivery_note:    note || null,
+        scheduled_at:     scheduled || null,
+        subtotal,
+        delivery_fee:     deliveryFee,
+        total,
+        payment_method:   payment,
+        payment_status:   paystackRef ? 'paid' : 'pending',
+        payment_reference: paystackRef ?? null,
+      }])
+      .select('id, order_number')
+      .single();
+
+    if (oErr) throw new Error(oErr.message);
+
+    const { error: iErr } = await supabase.from('order_items').insert(
+      items.map(i => ({
+        order_id:       order.id,
+        product_id:     i.product.id,
+        name:           i.product.name,
+        price:          i.product.price,
+        quantity:       i.quantity,
+        subtotal:       i.product.price * i.quantity,
+        selected_size:  i.selected_size  ?? null,
+        selected_color: i.selected_color ?? null,
+        image_url:      i.product.image_url ?? null,
+      }))
+    );
+    if (iErr) throw new Error(iErr.message);
+
+    fetch('/api/notify-vendor', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ orderId: order.id }),
+    }).catch(err => console.warn('Vendor email notification failed:', err));
+
+    setStoreName(store.name ?? '');
+    clearCart();
+    setOrderId(order.id);
+    setOrderNum(order.order_number);
+  }
+
+  // ── Cash on delivery / bank transfer path ──────────────────────
+  async function placeOrder() {
+    if (!validateForm()) return;
     setPlacing(true); setError('');
     try {
-      const { data: order, error: oErr } = await supabase
-        .from('orders')
-        .insert([{
-          customer_id:      user.id,
-          store_id:         store.id,
-          delivery_type:    isRealEstate ? 'viewing' : 'delivery',
-          delivery_address: address,
-          delivery_city:    city,
-          delivery_state:   state || null,
-          customer_phone:   phone,
-          delivery_note:    note || null,
-          scheduled_at:     scheduled || null,
-          subtotal,
-          delivery_fee:     deliveryFee,
-          total,
-          payment_method:   payment,
-          payment_status:   'pending',
-        }])
-        .select('id, order_number')
-        .single();
-
-      if (oErr) throw new Error(oErr.message);
-
-      const { error: iErr } = await supabase.from('order_items').insert(
-        items.map(i => ({
-          order_id:       order.id,
-          product_id:     i.product.id,
-          name:           i.product.name,
-          price:          i.product.price,
-          quantity:       i.quantity,
-          subtotal:       i.product.price * i.quantity,
-          selected_size:  i.selected_size  ?? null,
-          selected_color: i.selected_color ?? null,
-          image_url:      i.product.image_url ?? null,
-        }))
-      );
-      if (iErr) throw new Error(iErr.message);
-
-      // ── Notify vendor via email (fire-and-forget) ─────────────
-      fetch('/api/notify-vendor', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ orderId: order.id }),
-      }).catch(err => console.warn('Vendor email notification failed:', err));
-
-      // ── Success ───────────────────────────────────────────────
-      setStoreName(store.name ?? '');
-      clearCart();
-      setOrderId(order.id);
-      setOrderNum(order.order_number);
+      await createOrder();
     } catch (e: any) {
       setError(e.message ?? 'Failed to place order. Please try again.');
     } finally {
       setPlacing(false);
     }
-  };
+  }
+
+  // ── Card payment path via Paystack ──────────────────────────────
+  async function payWithCard() {
+    if (!validateForm()) return;
+    const email = user?.email ?? profile?.email;
+    if (!email) { setError('Your account needs an email on file to pay by card.'); return; }
+
+    setPlacing(true); setError('');
+    try {
+      await loadPaystackScript();
+      const PaystackPop = (window as any).PaystackPop;
+
+      const handler = PaystackPop.setup({
+        key:    process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY,
+        email,
+        amount: Math.round(total * 100), // Paystack expects kobo
+        currency: 'NGN',
+        ref: `drovo_${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
+        callback: (response: any) => {
+          // Runs after the customer completes the Paystack popup.
+          // We still verify server-side before trusting this.
+          (async () => {
+            try {
+              const res = await fetch('/api/verify-payment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reference: response.reference }),
+              });
+              const result = await res.json();
+              if (!result.verified) {
+                setError('Payment could not be verified. If you were charged, contact support with reference ' + response.reference);
+                setPlacing(false);
+                return;
+              }
+              await createOrder(result.reference);
+            } catch (e: any) {
+              setError(e.message ?? 'Something went wrong confirming your payment.');
+            } finally {
+              setPlacing(false);
+            }
+          })();
+        },
+        onClose: () => {
+          setPlacing(false);
+        },
+      });
+
+      handler.openIframe();
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to open payment window.');
+      setPlacing(false);
+    }
+  }
+
+  function handlePlaceOrderClick() {
+    if (payment === 'card') payWithCard();
+    else placeOrder();
+  }
 
   // ── Loading ───────────────────────────────────────────────────
   if (al) return (
@@ -198,6 +290,11 @@ function CheckoutInner() {
             <span>Total</span><span>₦{total.toLocaleString()}</span>
           </div>
           <div className="flex justify-between text-sm"><span className="text-gray-500">Payment</span><span className="font-semibold capitalize">{payment.replace(/_/g, ' ')}</span></div>
+          {payment === 'transfer' && (
+            <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+              Your order is marked <span className="font-bold text-amber-600">pending</span> until we confirm your transfer.
+            </div>
+          )}
         </div>
         <div className="flex gap-3">
           <Link href="/orders" className="flex-1 py-3 rounded-2xl border-2 border-orange-200 text-orange-600 font-bold text-sm hover:bg-orange-50">Track Order</Link>
@@ -222,6 +319,51 @@ function CheckoutInner() {
 
   return (
     <div className="min-h-screen pt-[64px] bg-gray-50">
+      {/* Bank transfer details modal */}
+      <AnimatePresence>
+        {showBankModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setShowBankModal(false)} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+            <motion.div initial={{ scale: .9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: .9, opacity: 0 }}
+              className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+              <button onClick={() => setShowBankModal(false)} className="absolute top-4 right-4 w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center">
+                <X className="w-4 h-4" />
+              </button>
+              <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mb-4">
+                <Smartphone className="w-6 h-6 text-blue-600" />
+              </div>
+              <h3 className="font-black text-gray-900 text-lg mb-1">Transfer to this account</h3>
+              <p className="text-gray-500 text-sm mb-5">Send exactly <span className="font-bold text-gray-900">₦{total.toLocaleString()}</span>, then place your order. We'll confirm your payment shortly after.</p>
+
+              <div className="space-y-3">
+                {[
+                  { label: 'Account Name',   value: BANK_DETAILS.accountName,   key: 'name' },
+                  { label: 'Account Number', value: BANK_DETAILS.accountNumber, key: 'number' },
+                  { label: 'Bank',           value: BANK_DETAILS.bankName,      key: 'bank' },
+                ].map(f => (
+                  <div key={f.key} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase tracking-wide font-bold">{f.label}</p>
+                      <p className="text-sm font-bold text-gray-900">{f.value}</p>
+                    </div>
+                    <button onClick={() => copyToClipboard(f.value, f.key)}
+                      className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-100 flex-shrink-0">
+                      {copiedField === f.key ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-gray-400" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button onClick={() => setShowBankModal(false)}
+                className="w-full mt-5 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-black hover:from-orange-600 hover:to-red-700">
+                Got it
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <div className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-[900px] mx-auto px-6 py-4 flex items-center gap-3">
@@ -414,18 +556,24 @@ function CheckoutInner() {
                   {[
                     { value: 'cash_on_delivery', label: 'Cash on Delivery',    desc: 'Pay when your order arrives', icon: <Banknote className="w-5 h-5 text-green-600" /> },
                     { value: 'transfer',         label: 'Bank Transfer',        desc: 'Transfer before delivery',   icon: <Smartphone className="w-5 h-5 text-blue-600" /> },
-                    { value: 'card',             label: 'Debit / Credit Card',  desc: 'Pay securely online',        icon: <CreditCard className="w-5 h-5 text-purple-600" /> },
+                    { value: 'card',             label: 'Debit / Credit Card',  desc: 'Pay securely via Paystack',  icon: <CreditCard className="w-5 h-5 text-purple-600" /> },
                   ].map(opt => (
                     <label key={opt.value}
                       className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${payment === opt.value ? 'border-orange-400 bg-orange-50' : 'border-gray-200 hover:border-orange-200'}`}>
                       <input type="radio" name="pay" value={opt.value} checked={payment === opt.value}
-                        onChange={() => setPayment(opt.value as PaymentMethod)} className="sr-only" />
+                        onChange={() => handlePaymentChange(opt.value as PaymentMethod)} className="sr-only" />
                       <div className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center flex-shrink-0">{opt.icon}</div>
                       <div className="flex-1"><div className="font-bold text-gray-900 text-sm">{opt.label}</div><div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div></div>
                       {payment === opt.value && <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0"><span className="text-white text-xs font-black">✓</span></div>}
                     </label>
                   ))}
                 </div>
+                {payment === 'transfer' && (
+                  <button type="button" onClick={() => setShowBankModal(true)}
+                    className="w-full mt-3 py-2.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100">
+                    View bank account details again
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -440,16 +588,43 @@ function CheckoutInner() {
                 <p className="text-xs text-gray-400 mt-0.5">{store?.name}</p>
               </div>
               <div className="px-5 py-4 space-y-3 max-h-64 overflow-y-auto">
-                {items.map(item => (
-                  <div key={`${item.product.id}-${item.selected_size}-${item.selected_color}`} className="flex items-center gap-3">
-                    {item.product.image_url && <img src={item.product.image_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-gray-100" />}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-800 truncate">{item.product.name}</p>
-                      <p className="text-xs text-gray-400">×{item.quantity}{item.selected_size && ` · ${item.selected_size}`}{item.selected_color && ` · ${item.selected_color}`}</p>
+                {items.map(item => {
+                  const lineKey = `${item.product.id}-${item.selected_size}-${item.selected_color}`;
+                  return (
+                    <div key={lineKey} className="flex items-center gap-3">
+                      {item.product.image_url && (
+                        <img src={item.product.image_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-gray-100" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{item.product.name}</p>
+                        <p className="text-xs text-gray-400">
+                          {item.selected_size && `${item.selected_size} `}
+                          {item.selected_color && `· ${item.selected_color}`}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <button type="button" onClick={() => updateQty(item.product.id, item.quantity - 1)}
+                            className="w-6 h-6 rounded-md border border-gray-200 flex items-center justify-center hover:bg-gray-50 active:bg-gray-100" aria-label="Decrease quantity">
+                            <Minus className="w-3 h-3 text-gray-500" />
+                          </button>
+                          <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
+                          <button type="button" onClick={() => updateQty(item.product.id, item.quantity + 1)}
+                            className="w-6 h-6 rounded-md border border-gray-200 flex items-center justify-center hover:bg-gray-50 active:bg-gray-100" aria-label="Increase quantity">
+                            <Plus className="w-3 h-3 text-gray-500" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                        <span className="text-sm font-black text-gray-900">
+                          ₦{(item.product.price * item.quantity).toLocaleString()}
+                        </span>
+                        <button type="button" onClick={() => removeItem(item.product.id)}
+                          className="text-gray-300 hover:text-red-500 transition-colors" aria-label="Remove item">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-sm font-black text-gray-900 flex-shrink-0">₦{(item.product.price * item.quantity).toLocaleString()}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="px-5 pb-5">
                 <div className="border-t border-gray-100 pt-4 space-y-1.5 text-sm mb-5">
@@ -465,15 +640,15 @@ function CheckoutInner() {
                     <span>Total</span><span>₦{total.toLocaleString()}</span>
                   </div>
                 </div>
-                <button onClick={placeOrder} disabled={placing}
+                <button onClick={handlePlaceOrderClick} disabled={placing}
                   className="w-full py-4 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-2xl font-black text-base hover:from-orange-600 hover:to-red-700 transition-all shadow-lg shadow-orange-200 disabled:opacity-60 flex items-center justify-center gap-2">
                   {placing
-                    ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />Placing...</>
-                    : <><ShoppingCart className="w-5 h-5" />{isRealEstate ? 'Book Viewing' : 'Place Order'} · ₦{total.toLocaleString()}</>
+                    ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />{payment === 'card' ? 'Waiting for payment...' : 'Placing...'}</>
+                    : <><ShoppingCart className="w-5 h-5" />{isRealEstate ? 'Book Viewing' : payment === 'card' ? 'Pay Now' : 'Place Order'} · ₦{total.toLocaleString()}</>
                   }
                 </button>
                 <div className="flex items-center justify-center gap-1 mt-3 text-xs text-gray-400">
-                  <Shield className="w-3 h-3" /> Secured by Drovo
+                  <Shield className="w-3 h-3" /> Secured by Drovo{payment === 'card' && ' & Paystack'}
                 </div>
               </div>
             </div>

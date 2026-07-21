@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Star, MapPin, Clock, ChevronLeft, Plus, Minus, ShoppingCart,
   Search, Shield, X, ChevronRight, Home, Shirt, Utensils,
-  BedDouble, Bath, Maximize2, Tag, Phone, MessageCircle
+  BedDouble, Bath, Maximize2, Tag, Phone, MessageCircle,
+  MoreVertical, Edit3, Trash2, AlertTriangle
 } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -22,7 +23,7 @@ function StoreInner() {
   const params  = useParams();
   const router  = useRouter();
   const id      = params.id as string;
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, user } = useAuth();
   const { items, store:cartStore, subtotal, totalItems, addItem, removeItem, updateQty } = useCart();
 
   const [store,      setStore]      = useState<Store|null>(null);
@@ -37,7 +38,25 @@ function StoreInner() {
   const [pickColor,  setPickColor]  = useState('');
   const catRefs = useRef<Record<string, HTMLDivElement|null>>({});
 
+  // Owner-only management menu
+  const [showOwnerMenu,   setShowOwnerMenu]   = useState(false);
+  const [showDeleteModal,setShowDeleteModal]  = useState(false);
+  const [deleting,        setDeleting]        = useState(false);
+  const [deleteError,     setDeleteError]     = useState('');
+  const ownerMenuRef = useRef<HTMLDivElement|null>(null);
+
   useEffect(() => { fetchStore(); }, [id]);
+
+  // Close the owner dropdown when clicking outside it
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ownerMenuRef.current && !ownerMenuRef.current.contains(e.target as Node)) {
+        setShowOwnerMenu(false);
+      }
+    }
+    if (showOwnerMenu) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showOwnerMenu]);
 
   async function fetchStore() {
     const [sr, cr, pr] = await Promise.all([
@@ -64,12 +83,45 @@ function StoreInner() {
     setSelected(null);
   };
 
+  async function handleDeleteStore() {
+    if (!store) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      // Guard: block deletion if this store still has orders, so we never
+      // silently orphan order history or hit an FK violation.
+      const { count, error: countErr } = await supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('store_id', store.id);
+
+      if (countErr) throw new Error(countErr.message);
+      if ((count ?? 0) > 0) {
+        throw new Error(`This store has ${count} order${count===1?'':'s'} on record and can't be deleted. Consider deactivating it instead.`);
+      }
+
+      // Remove products first (in case there's no ON DELETE CASCADE on store_id)
+      const { error: prodErr } = await supabase.from('products').delete().eq('store_id', store.id);
+      if (prodErr) throw new Error(prodErr.message);
+
+      const { error: storeErr } = await supabase.from('stores').delete().eq('id', store.id);
+      if (storeErr) throw new Error(storeErr.message);
+
+      router.push('/');
+    } catch (e: any) {
+      setDeleteError(e.message ?? 'Failed to delete store. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const filtered = products.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.description?.toLowerCase().includes(search.toLowerCase()));
   const byCat    = categories.map(c=>({...c, products:filtered.filter(p=>p.category_id===c.id)})).filter(c=>c.products.length>0);
   const uncat    = filtered.filter(p=>!p.category_id);
   const deliveryFee = store ? (DELIVERY_FEES[store.city.toLowerCase()] ?? DELIVERY_FEES.default) : 0;
   const isThisCart  = cartStore?.id === id;
   const meta        = store ? CATEGORY_META[store.category] : null;
+  const isOwner     = !!user && !!store && user.id === (store as any).user_id;
 
   if (loading) return <div className="min-h-screen pt-[64px] flex items-center justify-center"><div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"/></div>;
   if (!store) return <div className="min-h-screen pt-[64px] flex items-center justify-center"><div className="text-center"><p className="text-gray-500 mb-4">Store not found.</p><Link href="/" className="text-orange-500 font-bold">← Home</Link></div></div>;
@@ -133,6 +185,45 @@ function StoreInner() {
         )}
       </AnimatePresence>
 
+      {/* Delete store confirmation */}
+      <AnimatePresence>
+        {showDeleteModal&&(
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
+              onClick={()=>!deleting&&setShowDeleteModal(false)} className="absolute inset-0 bg-black/50 backdrop-blur-sm"/>
+            <motion.div initial={{scale:.9,opacity:0}} animate={{scale:1,opacity:1}} exit={{scale:.9,opacity:0}}
+              className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+              <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mb-4">
+                <AlertTriangle className="w-6 h-6 text-red-500"/>
+              </div>
+              <h3 className="font-black text-gray-900 text-lg mb-2">Delete "{store.name}"?</h3>
+              <p className="text-gray-500 text-sm mb-4">
+                This permanently deletes the store and all of its products. This action can't be undone.
+              </p>
+              {deleteError&&(
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 mb-4">
+                  <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5"/>
+                  <p className="text-red-600 text-xs font-medium">{deleteError}</p>
+                </div>
+              )}
+              <div className="flex gap-3">
+                <button onClick={()=>setShowDeleteModal(false)} disabled={deleting}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 font-bold text-sm text-gray-600 disabled:opacity-50">
+                  Cancel
+                </button>
+                <button onClick={handleDeleteStore} disabled={deleting}
+                  className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 disabled:opacity-60 flex items-center justify-center gap-2">
+                  {deleting
+                    ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>Deleting...</>
+                    : <><Trash2 className="w-4 h-4"/>Delete Store</>
+                  }
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Hero */}
       <div className="relative h-52 md:h-64 overflow-hidden">
         {store.cover_url
@@ -143,6 +234,32 @@ function StoreInner() {
         <button onClick={()=>router.back()} className="absolute top-4 left-4 w-9 h-9 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/60">
           <ChevronLeft className="w-5 h-5"/>
         </button>
+
+        {/* Owner-only management menu — never rendered for other visitors */}
+        {isOwner&&(
+          <div ref={ownerMenuRef} className="absolute top-4 right-4">
+            <button onClick={()=>setShowOwnerMenu(v=>!v)}
+              className="w-9 h-9 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/60">
+              <MoreVertical className="w-5 h-5"/>
+            </button>
+            <AnimatePresence>
+              {showOwnerMenu&&(
+                <motion.div initial={{opacity:0,y:-8,scale:.95}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:-8,scale:.95}}
+                  className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-10">
+                  <Link href={`/store/${id}/edit`} onClick={()=>setShowOwnerMenu(false)}
+                    className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+                    <Edit3 className="w-4 h-4 text-gray-400"/> Edit Store
+                  </Link>
+                  <button onClick={()=>{setShowOwnerMenu(false);setDeleteError('');setShowDeleteModal(true);}}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors">
+                    <Trash2 className="w-4 h-4"/> Delete Store
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
         <div className="absolute bottom-4 left-4 right-4 flex items-end gap-3">
           {store.logo_url&&<img src={store.logo_url} alt="" className="w-16 h-16 rounded-2xl border-2 border-white shadow-xl object-cover flex-shrink-0"/>}
           <div className="flex-1 min-w-0">
