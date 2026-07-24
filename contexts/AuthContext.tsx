@@ -25,6 +25,7 @@ export function AuthProvider({ children }:{ children:React.ReactNode }) {
     const metaRole = u.user_metadata?.role as UserRole|undefined;
     if (metaRole && !profile) {
       setProfile(p => p ?? { id:u.id, email:u.email??'', full_name:u.user_metadata?.full_name??'',
+        first_name:null, last_name:null,
         avatar_url:null, phone:null, role:metaRole, city:null, country:'Nigeria',
         created_at:'', updated_at:'' });
     }
