@@ -187,14 +187,18 @@ function CheckoutInner() {
       if (!virtualAccount && user) {
         setLoadingVA(true);
         try {
+          const fullName = profile?.full_name?.trim() ?? '';
+          const [firstName, ...rest] = fullName.split(' ');
+          const lastName = rest.join(' ');
+
           const res = await fetch('/api/get-virtual-account', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               profileId: user.id,
               email: user.email ?? profile?.email,
-              firstName: profile?.first_name,
-              lastName:  profile?.last_name,
+              firstName: firstName || undefined,
+              lastName:  lastName || undefined,
               phone,
             }),
           });

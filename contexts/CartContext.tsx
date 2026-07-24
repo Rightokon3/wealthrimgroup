@@ -4,7 +4,7 @@ import {
 } from 'react';
 import { CartItem, Product, Store } from '@/types';
 
-type CartStore = Pick<Store,'id'|'name'|'city'|'category'|'min_order'|'avg_delivery_min'> | null;
+type CartStore = Pick<Store, 'id' | 'name' | 'city' | 'category' | 'min_order' | 'avg_delivery_min' | 'latitude' | 'longitude' | 'custom_delivery_fee'> | null;
 
 interface CartState {
   items: CartItem[];
