@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   MapPin, Phone, ShoppingCart, ChevronRight, CreditCard,
   Banknote, Smartphone, CheckCircle, AlertCircle,
-  Shield, Calendar, Navigation, Plus, Minus, Trash2, X, Copy
+  Shield, Calendar, Navigation, Plus, Minus, Trash2, X, Copy, Clock,
+  Bike, Car, Search, UserRound
 } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -20,12 +21,25 @@ interface SavedAddress {
   city: string; state: string | null; is_default: boolean;
 }
 
-// TODO: replace with your real settlement account details
-const BANK_DETAILS = {
-  accountName:   'Drovo Technologies Ltd',
-  accountNumber: '0000000000',
-  bankName:      'Your Bank Name',
-};
+interface VirtualAccount {
+  accountNumber: string;
+  accountName: string;
+  bankName: string;
+}
+
+interface WaitingOrder {
+  id: string;
+  orderNum: string;
+}
+
+interface Rider {
+  id: string;
+  full_name: string;
+  vehicle_type: string;
+  total_deliveries: number;
+}
+
+const RIDER_ETA_MIN = 20; // fixed — no live GPS to compute a real ETA yet
 
 function CheckoutInner() {
   const router  = useRouter();
@@ -50,8 +64,22 @@ function CheckoutInner() {
   const [selectedAddrId, setSelectedAddrId] = useState<string | null>(null);
 
   // Payment gateway state
-  const [showBankModal, setShowBankModal]   = useState(false);
-  const [copiedField,   setCopiedField]     = useState<string | null>(null);
+  const [showBankModal,   setShowBankModal]   = useState(false);
+  const [virtualAccount,  setVirtualAccount]  = useState<VirtualAccount | null>(null);
+  const [loadingVA,       setLoadingVA]       = useState(false);
+  const [copiedField,     setCopiedField]     = useState<string | null>(null);
+  const [waitingOrder,    setWaitingOrder]    = useState<WaitingOrder | null>(null);
+
+  // Validation modal state
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [missingFields,       setMissingFields]       = useState<string[]>([]);
+
+  // Rider matching state
+  const [showRiderModal, setShowRiderModal] = useState(false);
+  const [ridersLoading,  setRidersLoading]  = useState(false);
+  const [onlineRiders,   setOnlineRiders]   = useState<Rider[]>([]);
+  const [riderSearchErr, setRiderSearchErr] = useState('');
+  const [assignedRider,  setAssignedRider]  = useState<Rider | null>(null);
 
   // ── Auth guard ────────────────────────────────────────────────
   useEffect(() => {
@@ -88,13 +116,57 @@ function CheckoutInner() {
   // ── Live delivery fee (distance-based) ───────────────────────
   const feeResult = useMemo(() => {
     if (!store || !city.trim()) return null;
-    return calculateDeliveryFee(city, store.city, customerCoords, null);
+    const vendorCoords = (store.latitude != null && store.longitude != null)
+      ? { lat: store.latitude, lng: store.longitude }
+      : null;
+    return calculateDeliveryFee(city, store.city, customerCoords, vendorCoords, store.custom_delivery_fee ?? null);
   }, [city, store, customerCoords]);
 
   const isRealEstate = store?.category === 'real_estate';
   const deliveryFee  = isRealEstate ? 0 : (feeResult?.fee ?? 3000);
   const platformFee  = Math.round(subtotal * 0.10);
   const total        = subtotal + deliveryFee;
+
+  // ── Realtime + polling fallback while a transfer order is pending ──
+  useEffect(() => {
+    if (!waitingOrder) return;
+
+    const channel = supabase
+      .channel(`order-${waitingOrder.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${waitingOrder.id}` },
+        (payload: any) => {
+          if (payload.new.payment_status === 'paid') {
+            setStoreName(store?.name ?? '');
+            setOrderId(payload.new.id);
+            setOrderNum(payload.new.order_number);
+            setWaitingOrder(null);
+          }
+        }
+      )
+      .subscribe();
+
+    // Fallback poll in case Realtime isn't enabled on this table yet
+    const poll = setInterval(async () => {
+      const { data } = await supabase
+        .from('orders')
+        .select('payment_status, order_number')
+        .eq('id', waitingOrder.id)
+        .single();
+      if (data?.payment_status === 'paid') {
+        setStoreName(store?.name ?? '');
+        setOrderId(waitingOrder.id);
+        setOrderNum(data.order_number);
+        setWaitingOrder(null);
+      }
+    }, 5000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(poll);
+    };
+  }, [waitingOrder, store]);
 
   // ── GPS location ──────────────────────────────────────────────
   function detectLocation() {
@@ -108,9 +180,35 @@ function CheckoutInner() {
   }
 
   // ── Payment method change ────────────────────────────────────
-  function handlePaymentChange(value: PaymentMethod) {
+  async function handlePaymentChange(value: PaymentMethod) {
     setPayment(value);
-    if (value === 'transfer') setShowBankModal(true);
+    if (value === 'transfer') {
+      setShowBankModal(true);
+      if (!virtualAccount && user) {
+        setLoadingVA(true);
+        try {
+          const res = await fetch('/api/get-virtual-account', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              profileId: user.id,
+              email: user.email ?? profile?.email,
+              firstName: profile?.first_name,
+              lastName:  profile?.last_name,
+              phone,
+            }),
+          });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+          setVirtualAccount(data);
+        } catch (e: any) {
+          setError(e.message ?? 'Failed to set up your bank transfer account.');
+          setShowBankModal(false);
+        } finally {
+          setLoadingVA(false);
+        }
+      }
+    }
   }
 
   function copyToClipboard(text: string, field: string) {
@@ -121,16 +219,67 @@ function CheckoutInner() {
 
   // ── Shared validation ─────────────────────────────────────────
   function validateForm(): boolean {
-    if (!address.trim()) { setError('Please enter your delivery address.'); return false; }
-    if (!city.trim())    { setError('Please enter your city.'); return false; }
-    if (!phone.trim())   { setError('Please enter your phone number.'); return false; }
-    if (items.length === 0) { setError('Your cart is empty.'); return false; }
+    const missing: string[] = [];
+    if (!address.trim())    missing.push(isRealEstate ? 'Your address' : 'Delivery address');
+    if (!city.trim())       missing.push('City');
+    if (!phone.trim())      missing.push('Phone number');
+    if (items.length === 0) missing.push('At least one item in your cart');
+
+    if (missing.length > 0) {
+      setMissingFields(missing);
+      setShowValidationModal(true);
+      return false;
+    }
     return true;
   }
 
-  // ── Create the order in Supabase (called after payment is settled/chosen) ──
+  // ── Search for online riders in the vendor's city ───────────────
+  async function searchForRiders() {
+    if (!store) return;
+    setShowRiderModal(true);
+    setRidersLoading(true);
+    setRiderSearchErr('');
+
+    const searchStart = Date.now();
+    const { data, error: rErr } = await supabase
+      .from('riders')
+      .select('id, full_name, vehicle_type, total_deliveries')
+      .eq('is_online', true)
+      .eq('is_active', true)
+      .ilike('city', store.city)
+      .order('total_deliveries', { ascending: false });
+
+    // Keep the "searching" state on screen for at least ~1.1s so it
+    // doesn't flash instantly even when the query is fast.
+    const elapsed = Date.now() - searchStart;
+    if (elapsed < 1100) await new Promise(res => setTimeout(res, 1100 - elapsed));
+
+    if (rErr) {
+      setRiderSearchErr(rErr.message);
+      setOnlineRiders([]);
+    } else {
+      setOnlineRiders(data ?? []);
+    }
+    setRidersLoading(false);
+  }
+
+  function pickRider(rider: Rider) {
+    setAssignedRider(rider);
+    setShowRiderModal(false);
+    runPaymentFlow();
+  }
+
+  // Let the customer proceed without a rider if none are online right
+  // now — dispatch can assign one manually afterwards.
+  function continueWithoutRider() {
+    setAssignedRider(null);
+    setShowRiderModal(false);
+    runPaymentFlow();
+  }
+
+  // ── Create the order in Supabase, returns the created row ──────
   async function createOrder(paystackRef?: string) {
-    if (!user || !store) return;
+    if (!user || !store) throw new Error('Not ready to place order.');
 
     const { data: order, error: oErr } = await supabase
       .from('orders')
@@ -150,6 +299,7 @@ function CheckoutInner() {
         payment_method:   payment,
         payment_status:   paystackRef ? 'paid' : 'pending',
         payment_reference: paystackRef ?? null,
+        assigned_rider_id: isRealEstate ? null : (assignedRider?.id ?? null),
       }])
       .select('id, order_number')
       .single();
@@ -177,18 +327,19 @@ function CheckoutInner() {
       body:    JSON.stringify({ orderId: order.id }),
     }).catch(err => console.warn('Vendor email notification failed:', err));
 
-    setStoreName(store.name ?? '');
-    clearCart();
-    setOrderId(order.id);
-    setOrderNum(order.order_number);
+    return order as { id: string; order_number: string };
   }
 
-  // ── Cash on delivery / bank transfer path ──────────────────────
+  // ── Cash on delivery ────────────────────────────────────────────
   async function placeOrder() {
     if (!validateForm()) return;
     setPlacing(true); setError('');
     try {
-      await createOrder();
+      const order = await createOrder();
+      clearCart();
+      setStoreName(store?.name ?? '');
+      setOrderId(order.id);
+      setOrderNum(order.order_number);
     } catch (e: any) {
       setError(e.message ?? 'Failed to place order. Please try again.');
     } finally {
@@ -196,7 +347,46 @@ function CheckoutInner() {
     }
   }
 
-  // ── Card payment path via Paystack ──────────────────────────────
+  // ── Bank transfer — one pending transfer order per customer ─────
+  async function payWithTransfer() {
+    if (!validateForm()) return;
+    if (!user) return;
+    setPlacing(true); setError('');
+    try {
+      const { data: existing } = await supabase
+        .from('orders')
+        .select('id, order_number')
+        .eq('customer_id', user.id)
+        .eq('payment_method', 'transfer')
+        .eq('payment_status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        setWaitingOrder({ id: existing.id, orderNum: existing.order_number });
+        return;
+      }
+
+      const order = await createOrder();
+      clearCart();
+      setWaitingOrder({ id: order.id, orderNum: order.order_number });
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to place order.');
+    } finally {
+      setPlacing(false);
+    }
+  }
+
+  async function cancelWaitingOrder() {
+    if (!waitingOrder) return;
+    await supabase.from('order_items').delete().eq('order_id', waitingOrder.id);
+    await supabase.from('orders').delete().eq('id', waitingOrder.id);
+    setWaitingOrder(null);
+    setPayment('cash_on_delivery');
+  }
+
+  // ── Card payment via Paystack ──────────────────────────────────
   async function payWithCard() {
     if (!validateForm()) return;
     const email = user?.email ?? profile?.email;
@@ -210,12 +400,10 @@ function CheckoutInner() {
       const handler = PaystackPop.setup({
         key:    process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY,
         email,
-        amount: Math.round(total * 100), // Paystack expects kobo
+        amount: Math.round(total * 100),
         currency: 'NGN',
         ref: `drovo_${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
         callback: (response: any) => {
-          // Runs after the customer completes the Paystack popup.
-          // We still verify server-side before trusting this.
           (async () => {
             try {
               const res = await fetch('/api/verify-payment', {
@@ -229,7 +417,11 @@ function CheckoutInner() {
                 setPlacing(false);
                 return;
               }
-              await createOrder(result.reference);
+              const order = await createOrder(result.reference);
+              clearCart();
+              setStoreName(store?.name ?? '');
+              setOrderId(order.id);
+              setOrderNum(order.order_number);
             } catch (e: any) {
               setError(e.message ?? 'Something went wrong confirming your payment.');
             } finally {
@@ -237,9 +429,7 @@ function CheckoutInner() {
             }
           })();
         },
-        onClose: () => {
-          setPlacing(false);
-        },
+        onClose: () => setPlacing(false),
       });
 
       handler.openIframe();
@@ -250,14 +440,79 @@ function CheckoutInner() {
   }
 
   function handlePlaceOrderClick() {
+    if (!validateForm()) return;
+    // Real estate bookings have no delivery — skip rider matching.
+    if (!isRealEstate && !assignedRider) {
+      searchForRiders();
+      return;
+    }
+    runPaymentFlow();
+  }
+
+  function runPaymentFlow() {
     if (payment === 'card') payWithCard();
+    else if (payment === 'transfer') payWithTransfer();
     else placeOrder();
+  }
+
+  // Bank modal's "I've Sent the Transfer" button also needs to go
+  // through the same validation + rider-search gate as the main button.
+  function confirmTransferSent() {
+    setShowBankModal(false);
+    if (!validateForm()) return;
+    if (!isRealEstate && !assignedRider) {
+      searchForRiders();
+      return;
+    }
+    payWithTransfer();
   }
 
   // ── Loading ───────────────────────────────────────────────────
   if (al) return (
     <div className="min-h-screen pt-[64px] flex items-center justify-center">
       <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  // ── Waiting for bank transfer to land ──────────────────────────
+  if (waitingOrder) return (
+    <div className="min-h-screen pt-[64px] flex items-center justify-center bg-gray-50 px-4">
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-center max-w-sm w-full">
+        <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-5 relative">
+          <Clock className="w-9 h-9 text-blue-500" />
+          <div className="absolute inset-0 rounded-full border-4 border-blue-200 border-t-blue-500 animate-spin" />
+        </div>
+        <h2 className="text-2xl font-black text-gray-900 mb-2">Waiting for your transfer</h2>
+        <p className="text-gray-500 text-sm mb-5">
+          Order <span className="font-mono font-bold">{waitingOrder.orderNum}</span> will confirm automatically the moment we receive your payment. You can leave this page — we'll update your order status either way.
+        </p>
+
+        {virtualAccount && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 text-left space-y-3 mb-5">
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wide font-bold">Account Number</p>
+                <p className="text-sm font-black text-gray-900">{virtualAccount.accountNumber}</p>
+              </div>
+              <button onClick={() => copyToClipboard(virtualAccount.accountNumber, 'wait-number')}
+                className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-100">
+                {copiedField === 'wait-number' ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-gray-400" />}
+              </button>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Bank</span><span className="font-bold text-gray-900">{virtualAccount.bankName}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Amount</span><span className="font-black text-gray-900">₦{total.toLocaleString()}</span>
+            </div>
+          </div>
+        )}
+
+        <button onClick={cancelWaitingOrder}
+          className="w-full py-3 rounded-xl border border-gray-200 text-gray-500 font-bold text-sm hover:bg-gray-50">
+          Cancel and choose a different payment method
+        </button>
+      </motion.div>
     </div>
   );
 
@@ -290,11 +545,6 @@ function CheckoutInner() {
             <span>Total</span><span>₦{total.toLocaleString()}</span>
           </div>
           <div className="flex justify-between text-sm"><span className="text-gray-500">Payment</span><span className="font-semibold capitalize">{payment.replace(/_/g, ' ')}</span></div>
-          {payment === 'transfer' && (
-            <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-              Your order is marked <span className="font-bold text-amber-600">pending</span> until we confirm your transfer.
-            </div>
-          )}
         </div>
         <div className="flex gap-3">
           <Link href="/orders" className="flex-1 py-3 rounded-2xl border-2 border-orange-200 text-orange-600 font-bold text-sm hover:bg-orange-50">Track Order</Link>
@@ -319,6 +569,119 @@ function CheckoutInner() {
 
   return (
     <div className="min-h-screen pt-[64px] bg-gray-50">
+      {/* Missing details validation modal */}
+      <AnimatePresence>
+        {showValidationModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setShowValidationModal(false)} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+            <motion.div initial={{ scale: .9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: .9, opacity: 0 }}
+              className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+              <button onClick={() => setShowValidationModal(false)} className="absolute top-4 right-4 w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center">
+                <X className="w-4 h-4" />
+              </button>
+              <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mb-4">
+                <AlertCircle className="w-6 h-6 text-red-500" />
+              </div>
+              <h3 className="font-black text-gray-900 text-lg mb-1">A few details are missing</h3>
+              <p className="text-gray-500 text-sm mb-4">
+                Please fill in the following before we can place your {isRealEstate ? 'viewing request' : 'order'}:
+              </p>
+              <ul className="space-y-2 mb-5">
+                {missingFields.map(field => (
+                  <li key={field} className="flex items-center gap-2 text-sm font-semibold text-gray-800 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" />
+                    {field}
+                  </li>
+                ))}
+              </ul>
+              <button onClick={() => setShowValidationModal(false)}
+                className="w-full py-3.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-black hover:from-orange-600 hover:to-red-700">
+                Got it, I'll fill it in
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Rider search / selection modal */}
+      <AnimatePresence>
+        {showRiderModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => !ridersLoading && setShowRiderModal(false)} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+            <motion.div initial={{ scale: .9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: .9, opacity: 0 }}
+              className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+              {!ridersLoading && (
+                <button onClick={() => setShowRiderModal(false)} className="absolute top-4 right-4 w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+
+              {ridersLoading ? (
+                <div className="py-6 text-center">
+                  <div className="w-16 h-16 rounded-full bg-orange-50 flex items-center justify-center mx-auto mb-5 relative">
+                    <Search className="w-7 h-7 text-orange-500" />
+                    <div className="absolute inset-0 rounded-full border-4 border-orange-200 border-t-orange-500 animate-spin" />
+                  </div>
+                  <h3 className="font-black text-gray-900 text-lg mb-1">Searching for nearby riders...</h3>
+                  <p className="text-gray-400 text-sm">Looking for online riders near {store?.name}</p>
+                </div>
+              ) : riderSearchErr ? (
+                <div>
+                  <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mb-4">
+                    <AlertCircle className="w-6 h-6 text-red-500" />
+                  </div>
+                  <h3 className="font-black text-gray-900 text-lg mb-1">Couldn't search for riders</h3>
+                  <p className="text-gray-500 text-sm mb-5">{riderSearchErr}</p>
+                  <button onClick={searchForRiders} className="w-full py-3 rounded-xl bg-orange-500 text-white font-bold text-sm hover:bg-orange-600">Try again</button>
+                </div>
+              ) : onlineRiders.length === 0 ? (
+                <div>
+                  <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+                    <UserRound className="w-6 h-6 text-gray-400" />
+                  </div>
+                  <h3 className="font-black text-gray-900 text-lg mb-1">No riders online right now</h3>
+                  <p className="text-gray-500 text-sm mb-5">There's no rider currently online near {store?.name}. You can still place your order — we'll assign a rider as soon as one comes online.</p>
+                  <div className="flex gap-3">
+                    <button onClick={searchForRiders} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50">Search again</button>
+                    <button onClick={continueWithoutRider} className="flex-1 py-3 rounded-xl bg-orange-500 text-white font-bold text-sm hover:bg-orange-600">Continue</button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center mb-4">
+                    <CheckCircle className="w-6 h-6 text-green-600" />
+                  </div>
+                  <h3 className="font-black text-gray-900 text-lg mb-1">Riders near you</h3>
+                  <p className="text-gray-500 text-sm mb-4">Pick a rider to deliver your order.</p>
+                  <div className="space-y-2.5 max-h-72 overflow-y-auto mb-1">
+                    {onlineRiders.map(rider => {
+                      const VehicleIcon = rider.vehicle_type === 'car' ? Car : Bike;
+                      return (
+                        <button key={rider.id} onClick={() => pickRider(rider)}
+                          className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-gray-200 hover:border-orange-400 hover:bg-orange-50 transition-all text-left">
+                          <div className="w-11 h-11 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                            <VehicleIcon className="w-5 h-5 text-orange-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-gray-900 text-sm truncate">{rider.full_name}</p>
+                            <p className="text-xs text-gray-400 capitalize">{rider.vehicle_type} · {rider.total_deliveries} deliveries</p>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs font-bold text-orange-600 flex-shrink-0">
+                            <Clock className="w-3.5 h-3.5" />~{RIDER_ETA_MIN} min
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Bank transfer details modal */}
       <AnimatePresence>
         {showBankModal && (
@@ -333,31 +696,52 @@ function CheckoutInner() {
               <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mb-4">
                 <Smartphone className="w-6 h-6 text-blue-600" />
               </div>
-              <h3 className="font-black text-gray-900 text-lg mb-1">Transfer to this account</h3>
-              <p className="text-gray-500 text-sm mb-5">Send exactly <span className="font-bold text-gray-900">₦{total.toLocaleString()}</span>, then place your order. We'll confirm your payment shortly after.</p>
+              <h3 className="font-black text-gray-900 text-lg mb-1">Your transfer account</h3>
+              <p className="text-gray-500 text-sm mb-5">
+                This account is unique to you and reused for future orders too. Transfer exactly <span className="font-bold text-gray-900">₦{total.toLocaleString()}</span> and we'll confirm automatically.
+              </p>
 
-              <div className="space-y-3">
-                {[
-                  { label: 'Account Name',   value: BANK_DETAILS.accountName,   key: 'name' },
-                  { label: 'Account Number', value: BANK_DETAILS.accountNumber, key: 'number' },
-                  { label: 'Bank',           value: BANK_DETAILS.bankName,      key: 'bank' },
-                ].map(f => (
-                  <div key={f.key} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase tracking-wide font-bold">{f.label}</p>
-                      <p className="text-sm font-bold text-gray-900">{f.value}</p>
+              {loadingVA ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : virtualAccount ? (
+                <div className="space-y-3">
+                  {[
+                    { label: 'Account Name',   value: virtualAccount.accountName,   key: 'name' },
+                    { label: 'Account Number', value: virtualAccount.accountNumber, key: 'number' },
+                    { label: 'Bank',           value: virtualAccount.bankName,      key: 'bank' },
+                  ].map(f => (
+                    <div key={f.key} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide font-bold">{f.label}</p>
+                        <p className="text-sm font-bold text-gray-900">{f.value}</p>
+                      </div>
+                      <button onClick={() => copyToClipboard(f.value, f.key)}
+                        className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-100 flex-shrink-0">
+                        {copiedField === f.key ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-gray-400" />}
+                      </button>
                     </div>
-                    <button onClick={() => copyToClipboard(f.value, f.key)}
-                      className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-100 flex-shrink-0">
-                      {copiedField === f.key ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-gray-400" />}
-                    </button>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-red-500">Couldn't load your account details. Please try again.</p>
+              )}
 
+              {virtualAccount && !loadingVA && (
+                <button
+                  onClick={confirmTransferSent}
+                  disabled={placing}
+                  className="w-full mt-5 py-3.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-black hover:from-orange-600 hover:to-red-700 disabled:opacity-60 flex items-center justify-center gap-2">
+                  {placing
+                    ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Placing...</>
+                    : "I've Sent the Transfer — Place Order"
+                  }
+                </button>
+              )}
               <button onClick={() => setShowBankModal(false)}
-                className="w-full mt-5 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-black hover:from-orange-600 hover:to-red-700">
-                Got it
+                className="w-full mt-2 py-2.5 text-gray-400 font-semibold text-sm hover:text-gray-600">
+                I'll pay later
               </button>
             </motion.div>
           </div>
@@ -555,7 +939,7 @@ function CheckoutInner() {
                 <div className="space-y-3">
                   {[
                     { value: 'cash_on_delivery', label: 'Cash on Delivery',    desc: 'Pay when your order arrives', icon: <Banknote className="w-5 h-5 text-green-600" /> },
-                    { value: 'transfer',         label: 'Bank Transfer',        desc: 'Transfer before delivery',   icon: <Smartphone className="w-5 h-5 text-blue-600" /> },
+                    { value: 'transfer',         label: 'Bank Transfer',        desc: 'Auto-confirmed once received', icon: <Smartphone className="w-5 h-5 text-blue-600" /> },
                     { value: 'card',             label: 'Debit / Credit Card',  desc: 'Pay securely via Paystack',  icon: <CreditCard className="w-5 h-5 text-purple-600" /> },
                   ].map(opt => (
                     <label key={opt.value}
@@ -568,7 +952,7 @@ function CheckoutInner() {
                     </label>
                   ))}
                 </div>
-                {payment === 'transfer' && (
+                {payment === 'transfer' && virtualAccount && (
                   <button type="button" onClick={() => setShowBankModal(true)}
                     className="w-full mt-3 py-2.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100">
                     View bank account details again
@@ -627,6 +1011,18 @@ function CheckoutInner() {
                 })}
               </div>
               <div className="px-5 pb-5">
+                {assignedRider && !isRealEstate && (
+                  <div className="flex items-center gap-2.5 p-3 mb-4 rounded-xl bg-green-50 border border-green-100">
+                    <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                      {assignedRider.vehicle_type === 'car' ? <Car className="w-4 h-4 text-green-700" /> : <Bike className="w-4 h-4 text-green-700" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-green-800 truncate">{assignedRider.full_name}</p>
+                      <p className="text-xs text-green-600">~{RIDER_ETA_MIN} min ETA</p>
+                    </div>
+                    <button onClick={() => setAssignedRider(null)} className="text-xs font-bold text-green-700 hover:underline flex-shrink-0">Change</button>
+                  </div>
+                )}
                 <div className="border-t border-gray-100 pt-4 space-y-1.5 text-sm mb-5">
                   <div className="flex justify-between text-gray-500"><span>Subtotal</span><span>₦{subtotal.toLocaleString()}</span></div>
                   <div className="flex justify-between text-orange-600 font-semibold"><span>Drovo fee (10%)</span><span>₦{platformFee.toLocaleString()}</span></div>

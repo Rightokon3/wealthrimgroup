@@ -1,7 +1,7 @@
 // lib/deliveryFee.ts
 // ================================================================
 // Distance-based delivery fee calculation
-// Base: ₦3,000 — reduces the closer the customer is to the vendor
+// Rate: ₦1,000 per kilometer between vendor and customer
 // ================================================================
 
 export interface Coords {
@@ -23,15 +23,11 @@ export function haversineKm(a: Coords, b: Coords): number {
 
 function toRad(deg: number) { return (deg * Math.PI) / 180; }
 
-// ── Fee tiers by distance ────────────────────────────────────────
-// Starts at ₦3,000 (base/max), steps down the closer you are
-//
-//  0 –  2 km  →  ₦500    (same neighbourhood)
-//  2 –  5 km  →  ₦1,000  (short ride)
-//  5 – 10 km  →  ₦1,500  (medium)
-// 10 – 20 km  →  ₦2,000  (far within city)
-// 20 – 40 km  →  ₦2,500  (cross-city fringe)
-// 40+ km      →  ₦3,000  (base / different city)
+// ── Rate configuration ───────────────────────────────────────────
+const RATE_PER_KM = 1_000; // ₦1,000 per km
+const MIN_FEE     = 500;   // floor — very short deliveries still cost something
+const MAX_FEE: number | null = null; // set e.g. 5000 to cap long-distance fees; null = uncapped
+const ROUND_TO    = 50;    // round the computed fee to the nearest ₦50
 
 export interface FeeResult {
   fee:         number;
@@ -40,34 +36,48 @@ export interface FeeResult {
   tier:        string;   // short badge for UI
 }
 
-const TIERS: { maxKm: number; fee: number; tier: string; label: string }[] = [
-  { maxKm:  2, fee:   500, tier: 'Nearby',      label: 'Within 2 km'      },
-  { maxKm:  5, fee: 1_000, tier: 'Short ride',  label: '2 – 5 km'         },
-  { maxKm: 10, fee: 1_500, tier: 'Medium',      label: '5 – 10 km'        },
-  { maxKm: 20, fee: 2_000, tier: 'Far',         label: '10 – 20 km'       },
-  { maxKm: 40, fee: 2_500, tier: 'Cross-city',  label: '20 – 40 km'       },
-  { maxKm: Infinity, fee: 3_000, tier: 'Long distance', label: '40+ km'   },
+// Distance bands used only for the UI badge/colour — the fee itself
+// always comes from km × ₦1,000, these are just labels.
+const TIER_LABELS: { maxKm: number; tier: string }[] = [
+  { maxKm:  2,       tier: 'Nearby'       },
+  { maxKm:  5,       tier: 'Short ride'   },
+  { maxKm: 10,       tier: 'Medium'       },
+  { maxKm: 20,       tier: 'Far'          },
+  { maxKm: 40,       tier: 'Cross-city'   },
+  { maxKm: Infinity, tier: 'Long distance'},
 ];
 
-// ── Primary: coord-based ─────────────────────────────────────────
+function tierForKm(km: number): string {
+  return TIER_LABELS.find(t => km <= t.maxKm)!.tier;
+}
+
+function roundFee(rawFee: number): number {
+  let fee = Math.max(MIN_FEE, Math.round(rawFee / ROUND_TO) * ROUND_TO);
+  if (MAX_FEE !== null) fee = Math.min(fee, MAX_FEE);
+  return fee;
+}
+
+// ── Primary: coord-based (₦1,000/km) ─────────────────────────────
 export function feeFromCoords(
   customerCoords: Coords,
   vendorCoords:   Coords,
 ): FeeResult {
-  const km = haversineKm(customerCoords, vendorCoords);
-  const tier = TIERS.find(t => km <= t.maxKm)!;
+  const km  = haversineKm(customerCoords, vendorCoords);
+  const fee = roundFee(km * RATE_PER_KM);
+  const distanceKm = Math.round(km * 10) / 10;
   return {
-    fee:        tier.fee,
-    distanceKm: Math.round(km * 10) / 10,
-    label:      `${tier.label} · ₦${tier.fee.toLocaleString()}`,
-    tier:       tier.tier,
+    fee,
+    distanceKm,
+    label: `${distanceKm} km · ₦${fee.toLocaleString()}`,
+    tier:  tierForKm(km),
   };
 }
 
 // ── Fallback: city-name matching ─────────────────────────────────
-// Used when coords aren't available.
-// Same city → ₦1,500 (conservative mid-range)
-// Different city → ₦3,000 (base)
+// Used only when exact coordinates aren't available for the vendor
+// and/or the customer. These are rough estimates, not measured
+// distances — encourage vendors to capture their GPS location and
+// customers to share theirs for an accurate fee.
 
 const CITY_COORDS: Record<string, Coords> = {
   'lagos':           { lat:  6.5244, lng:  3.3792 },
@@ -87,6 +97,11 @@ const CITY_COORDS: Record<string, Coords> = {
   'nairobi':         { lat: -1.2921, lng: 36.8219 },
 };
 
+// Assumed distances used ONLY when we can't compute a real one —
+// deliberately conservative (cheaper) so we don't overcharge on a guess.
+const ASSUMED_SAME_CITY_KM      = 3;
+const ASSUMED_DIFFERENT_CITY_KM = 15;
+
 function normalise(city: string) { return city.toLowerCase().trim(); }
 
 export function feeFromCities(
@@ -96,30 +111,41 @@ export function feeFromCities(
   const cc = normalise(customerCity);
   const vc = normalise(vendorCity);
 
-  // If we know both cities' coords, use haversine
+  // If we know both cities' coords, use haversine between city centers
   const cCoords = CITY_COORDS[cc];
   const vCoords = CITY_COORDS[vc];
-
   if (cCoords && vCoords) {
     return feeFromCoords(cCoords, vCoords);
   }
 
-  // Same city name — treat as mid-range
+  // Same city name, no coords — assume a short in-city hop
   if (cc === vc) {
-    return { fee: 1_500, distanceKm: null, label: 'Same city · ₦1,500', tier: 'Medium' };
+    const fee = roundFee(ASSUMED_SAME_CITY_KM * RATE_PER_KM);
+    return { fee, distanceKm: null, label: `Same city (estimated) · ₦${fee.toLocaleString()}`, tier: 'Medium' };
   }
 
-  // Different city, unknown coords — base rate
-  return { fee: 3_000, distanceKm: null, label: 'Different city · ₦3,000', tier: 'Long distance' };
+  // Different city, unknown coords — assume a longer trip
+  const fee = roundFee(ASSUMED_DIFFERENT_CITY_KM * RATE_PER_KM);
+  return { fee, distanceKm: null, label: `Different city (estimated) · ₦${fee.toLocaleString()}`, tier: 'Long distance' };
 }
 
-// ── Master function — uses coords if available, falls back to cities ──
+// ── Master function ───────────────────────────────────────────────
+// Priority: vendor's flat override → real coords → city-name fallback
 export function calculateDeliveryFee(
-  customerCity:   string,
-  vendorCity:     string,
-  customerCoords?: Coords | null,
-  vendorCoords?:   Coords | null,
+  customerCity:       string,
+  vendorCity:         string,
+  customerCoords?:    Coords | null,
+  vendorCoords?:      Coords | null,
+  customDeliveryFee?: number | null,
 ): FeeResult {
+  if (customDeliveryFee != null && customDeliveryFee > 0) {
+    return {
+      fee:        customDeliveryFee,
+      distanceKm: null,
+      label:      `Vendor flat rate · ₦${customDeliveryFee.toLocaleString()}`,
+      tier:       'Flat rate',
+    };
+  }
   if (customerCoords && vendorCoords) {
     return feeFromCoords(customerCoords, vendorCoords);
   }

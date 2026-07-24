@@ -24,7 +24,7 @@ function StoreInner() {
   const router  = useRouter();
   const id      = params.id as string;
   const { isLoggedIn, user } = useAuth();
-  const { items, store:cartStore, subtotal, totalItems, addItem, removeItem, updateQty } = useCart();
+  const { items, store:cartStore, subtotal, totalItems, addItem, removeItem, updateQty, clearCart } = useCart();
 
   const [store,      setStore]      = useState<Store|null>(null);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
@@ -33,6 +33,7 @@ function StoreInner() {
   const [search,     setSearch]     = useState('');
   const [activeTab,  setActiveTab]  = useState('');
   const [warnDiff,   setWarnDiff]   = useState(false);
+  const [pendingAdd, setPendingAdd] = useState<{ product: Product; size?: string; color?: string } | null>(null);
   const [selected,   setSelected]   = useState<Product|null>(null); // for fashion size/color picker
   const [pickSize,   setPickSize]   = useState('');
   const [pickColor,  setPickColor]  = useState('');
@@ -72,7 +73,11 @@ function StoreInner() {
   const getQty = (pid: string) => items.find(i=>i.product.id===pid)?.quantity??0;
 
   const handleAdd = (product: Product, size?: string, color?: string) => {
-    if (cartStore && cartStore.id !== id && totalItems > 0) { setWarnDiff(true); return; }
+    if (cartStore && cartStore.id !== id && totalItems > 0) {
+      setPendingAdd({ product, size, color });
+      setWarnDiff(true);
+      return;
+    }
     if (!store) return;
     const storeRef = { id:store.id, name:store.name, city:store.city, category:store.category, min_order:store.min_order, avg_delivery_min:store.avg_delivery_min };
     // Fashion needs size/color selection
@@ -82,6 +87,30 @@ function StoreInner() {
     addItem(product, storeRef, size, color);
     setSelected(null);
   };
+
+  // ── Resolve the "different store" warning ────────────────────
+  // "Keep cart" just dismisses — nothing changes, the pending item is dropped.
+  // "Start fresh" actually clears the old store's cart and adds the item
+  // that triggered the warning in the first place.
+  function handleKeepCart() {
+    setWarnDiff(false);
+    setPendingAdd(null);
+  }
+
+  function handleStartFresh() {
+    if (pendingAdd && store) {
+      clearCart();
+      const storeRef = { id:store.id, name:store.name, city:store.city, category:store.category, min_order:store.min_order, avg_delivery_min:store.avg_delivery_min };
+      const { product, size, color } = pendingAdd;
+      if (store.category==='fashion' && (product.sizes.length>0||product.colors.length>0) && !size && !color) {
+        setSelected(product); setPickSize(''); setPickColor('');
+      } else {
+        addItem(product, storeRef, size, color);
+      }
+    }
+    setWarnDiff(false);
+    setPendingAdd(null);
+  }
 
   async function handleDeleteStore() {
     if (!store) return;
@@ -132,13 +161,13 @@ function StoreInner() {
       <AnimatePresence>
         {warnDiff&&(
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>setWarnDiff(false)} className="absolute inset-0 bg-black/50 backdrop-blur-sm"/>
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={handleKeepCart} className="absolute inset-0 bg-black/50 backdrop-blur-sm"/>
             <motion.div initial={{scale:.9,opacity:0}} animate={{scale:1,opacity:1}} exit={{scale:.9,opacity:0}} className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
               <h3 className="font-black text-gray-900 text-lg mb-2">Start a new order?</h3>
               <p className="text-gray-500 text-sm mb-5">Your cart has items from <span className="font-bold">{cartStore?.name}</span>. This will clear your current cart.</p>
               <div className="flex gap-3">
-                <button onClick={()=>setWarnDiff(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 font-bold text-sm text-gray-600">Keep cart</button>
-                <button onClick={()=>{setWarnDiff(false);}} className="flex-1 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-sm hover:bg-orange-600">Start fresh</button>
+                <button onClick={handleKeepCart} className="flex-1 py-2.5 rounded-xl border border-gray-200 font-bold text-sm text-gray-600">Keep cart</button>
+                <button onClick={handleStartFresh} className="flex-1 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-sm hover:bg-orange-600">Start fresh</button>
               </div>
             </motion.div>
           </div>
