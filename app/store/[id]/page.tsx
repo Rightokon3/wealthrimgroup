@@ -19,6 +19,27 @@ const DELIVERY_FEES: Record<string,number> = {
   lagos:500,abuja:700,'port harcourt':600,ibadan:550,kano:800,default:1000
 };
 
+// Shared helper so both call sites always build the SAME shape as
+// CartContext's `CartStore` type (Pick<Store, ...9 fields>).
+// If CartStore's picked fields ever change, TypeScript will now
+// catch the mismatch here instead of silently accepting a short object.
+function toCartStoreRef(store: Store): Pick<Store,
+  'id' | 'name' | 'city' | 'category' | 'min_order' | 'avg_delivery_min' |
+  'latitude' | 'longitude' | 'custom_delivery_fee'
+> {
+  return {
+    id: store.id,
+    name: store.name,
+    city: store.city,
+    category: store.category,
+    min_order: store.min_order,
+    avg_delivery_min: store.avg_delivery_min,
+    latitude: store.latitude,
+    longitude: store.longitude,
+    custom_delivery_fee: store.custom_delivery_fee,
+  };
+}
+
 function StoreInner() {
   const params  = useParams();
   const router  = useRouter();
@@ -79,7 +100,7 @@ function StoreInner() {
       return;
     }
     if (!store) return;
-    const storeRef = { id:store.id, name:store.name, city:store.city, category:store.category, min_order:store.min_order, avg_delivery_min:store.avg_delivery_min };
+    const storeRef = toCartStoreRef(store);
     // Fashion needs size/color selection
     if (store.category==='fashion' && (product.sizes.length>0||product.colors.length>0) && !size && !color) {
       setSelected(product); setPickSize(''); setPickColor(''); return;
@@ -100,7 +121,7 @@ function StoreInner() {
   function handleStartFresh() {
     if (pendingAdd && store) {
       clearCart();
-      const storeRef = { id:store.id, name:store.name, city:store.city, category:store.category, min_order:store.min_order, avg_delivery_min:store.avg_delivery_min };
+      const storeRef = toCartStoreRef(store);
       const { product, size, color } = pendingAdd;
       if (store.category==='fashion' && (product.sizes.length>0||product.colors.length>0) && !size && !color) {
         setSelected(product); setPickSize(''); setPickColor('');
