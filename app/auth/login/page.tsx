@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { ShoppingCart, Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 function LoginInner() {
   const router = useRouter();
@@ -21,8 +22,32 @@ function LoginInner() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError(''); setSubmitting(true);
+
     const { error } = await signIn(email, password);
-    if (error) { setError(error.includes('Invalid login') ? 'Incorrect email or password.' : error); setSubmitting(false); return; }
+    if (error) {
+      setError(error.includes('Invalid login') ? 'Incorrect email or password.' : error);
+      setSubmitting(false);
+      return;
+    }
+
+    // Signed in successfully with Supabase — now check OUR OWN verification flag.
+    const { data: { user: signedInUser } } = await supabase.auth.getUser();
+    if (signedInUser) {
+      const { data: profileRow } = await supabase
+        .from('profiles')
+        .select('email_verified')
+        .eq('id', signedInUser.id)
+        .maybeSingle();
+
+      if (profileRow && profileRow.email_verified === false) {
+        // Don't leave them signed in while unverified — sign back out immediately.
+        await supabase.auth.signOut();
+        setSubmitting(false);
+        router.push(`/auth/verify-pending?email=${encodeURIComponent(email)}`);
+        return;
+      }
+    }
+
     router.push(next);
   };
 
@@ -38,7 +63,12 @@ function LoginInner() {
             <p className="text-orange-100 text-sm mt-1">Sign in to your AfriCart account</p>
           </div>
           <div className="px-8 py-8">
-            {error && <motion.div initial={{opacity:0,y:-8}} animate={{opacity:1,y:0}} className="flex items-start gap-3 p-4 mb-5 rounded-xl bg-red-50 border border-red-200"><AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5"/><p className="text-red-600 text-sm font-medium">{error}</p></motion.div>}
+            {error && (
+              <motion.div initial={{opacity:0,y:-8}} animate={{opacity:1,y:0}} className="flex items-start gap-3 p-4 mb-5 rounded-xl bg-red-50 border border-red-200">
+                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5"/>
+                <p className="text-red-600 text-sm font-medium">{error}</p>
+              </motion.div>
+            )}
             {params.get('next') && <div className="p-3 mb-5 rounded-xl bg-orange-50 border border-orange-100 text-orange-700 text-sm font-medium text-center">Please sign in to continue</div>}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>

@@ -1,10 +1,11 @@
 'use client';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShoppingCart, Mail, Lock, Eye, EyeOff, User, ArrowRight, AlertCircle, ShoppingBag, Store, CheckCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { UserRole } from '@/types';
 
 function SignupInner() {
@@ -22,15 +23,49 @@ function SignupInner() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
-  useEffect(() => { if (!loading && isLoggedIn) router.replace('/'); }, [isLoggedIn, loading, router]);
+  // A ref, not state — updates synchronously, so it's already true by the
+  // time onAuthStateChange fires isLoggedIn=true, closing the race where
+  // the redirect effect below would run before setSuccess(true) lands.
+  const justSignedUpRef = useRef(false);
+
+  useEffect(() => {
+    if (justSignedUpRef.current) return;
+    if (!loading && isLoggedIn) router.replace('/');
+  }, [isLoggedIn, loading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError('');
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
     if (password !== confirm) { setError('Passwords do not match.'); return; }
     setSubmitting(true);
+    justSignedUpRef.current = true; // block the redirect effect before signUp can trigger onAuthStateChange
+
     const { error } = await signUp(email, password, fullName, role);
-    if (error) { setError(error.includes('already registered')?'An account with this email already exists.':error); setSubmitting(false); return; }
+    if (error) {
+      setError(error.includes('already registered') ? 'An account with this email already exists.' : error);
+      setSubmitting(false);
+      justSignedUpRef.current = false; // signup failed — restore normal redirect behavior
+      return;
+    }
+
+    // Supabase's own "Confirm email" step is disabled (see setup notes), so
+    // the session is live right after signUp — grab the new user's id and
+    // fire our own verification email via Nodemailer instead.
+    try {
+      const { data: { user: newUser } } = await supabase.auth.getUser();
+      if (newUser) {
+        await fetch('/api/send-verification-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: newUser.id, email, fullName }),
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to send verification email:', err);
+      // Don't block account creation on the email step — the account still exists.
+    }
+
+    setSubmitting(false);
     setSuccess(true);
   };
 
@@ -41,7 +76,7 @@ function SignupInner() {
       <motion.div initial={{opacity:0,scale:.9}} animate={{opacity:1,scale:1}} className="bg-white rounded-3xl shadow-xl p-10 max-w-md w-full text-center">
         <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5"><CheckCircle className="w-10 h-10 text-green-500"/></div>
         <h2 className="text-2xl font-black text-gray-900 mb-2">Check your email!</h2>
-        <p className="text-gray-500 mb-6">We sent a confirmation link to <span className="font-bold text-gray-800">{email}</span>.</p>
+        <p className="text-gray-500 mb-6">We sent a confirmation link to <span className="font-bold text-gray-800">{email}</span>. Click it to activate your account.</p>
         <Link href="/auth/login" className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm">Go to Login <ArrowRight className="w-4 h-4"/></Link>
       </motion.div>
     </div>
