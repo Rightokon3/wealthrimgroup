@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Mail, ArrowLeft, Loader2, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
 
 export default function ForgotPassword() {
   const [email,   setEmail]   = useState('');
@@ -15,13 +14,20 @@ export default function ForgotPassword() {
     if (!email) { setError('Enter your email address.'); return; }
     setLoading(true); setError('');
 
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
-    });
-
-    if (err) { setError(err.message); setLoading(false); return; }
-    setSent(true);
-    setLoading(false);
+    try {
+      const res = await fetch('/api/send-reset-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (data.error) { setError(data.error); setLoading(false); return; }
+      setSent(true);
+    } catch (e: any) {
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
