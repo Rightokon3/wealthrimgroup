@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       expires_at: expiresAt.toISOString(),
     }]);
 
-    const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+    const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? 'http://https://wealthrimgroup.netlify.app/0').replace(/\/$/, '');
     const verifyLink = `${baseUrl}/api/verify-email?token=${token}`;
 
     await mailer.sendMail({

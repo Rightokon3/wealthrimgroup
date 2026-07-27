@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     }]);
     if (dbErr) throw new Error(dbErr.message);
 
-    const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+    const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? 'https://wealthrimgroup.netlify.app/').replace(/\/$/, '');
     const verifyLink = `${baseUrl}/api/verify-email?token=${token}`;
 
     await mailer.sendMail({

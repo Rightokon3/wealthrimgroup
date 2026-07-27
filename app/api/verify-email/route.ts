@@ -4,7 +4,7 @@ import { mailer } from '@/lib/mailer';
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token');
-  const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+  const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? 'http://https://wealthrimgroup.netlify.app/0').replace(/\/$/, '');
 
   if (!token) {
     return NextResponse.redirect(`${baseUrl}/auth/verify-result?status=invalid`);
