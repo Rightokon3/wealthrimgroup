@@ -46,20 +46,25 @@ function ProductFormInner() {
   const platformFee = +(price * 0.10).toFixed(2);
   const vendorGets  = +(price * 0.90).toFixed(2);
 
-  useEffect(() => {
-    if (!authLoading && user) loadStore();
-  }, [authLoading, user]);
+useEffect(() => {
+  console.log('PRODUCT FORM DEBUG — effect fired', { authLoading, userId: user?.id });
+  if (!authLoading && user) loadStore();
+}, [authLoading, user]);
 
-  async function loadStore() {
-    const { data: storeData } = await supabase.from('stores').select('*').eq('vendor_id', user!.id).order('created_at', { ascending: true }).limit(1).maybeSingle();
+async function loadStore() {
+  try {
+    const { data: storeData, error: storeErr } = await supabase.from('stores').select('*').eq('vendor_id', user!.id).order('created_at', { ascending: true }).limit(1).maybeSingle();
+    console.log('PRODUCT FORM DEBUG — store:', { storeData, storeErr, userId: user!.id });
     if (!storeData) { router.replace('/vendor/setup'); return; }
     setStore(storeData);
 
-    const { data: cats } = await supabase.from('product_categories').select('*').eq('store_id', storeData.id).order('sort_order');
+    const { data: cats, error: catErr } = await supabase.from('product_categories').select('*').eq('store_id', storeData.id).order('sort_order');
+    console.log('PRODUCT FORM DEBUG — categories:', { cats, catErr });
     setCategories(cats ?? []);
 
     if (isEdit) {
-      const { data: prod } = await supabase.from('products').select('*').eq('id', editId).single();
+      const { data: prod, error: prodErr } = await supabase.from('products').select('*').eq('id', editId).single();
+      console.log('PRODUCT FORM DEBUG — edit product:', { prod, prodErr });
       if (prod) {
         reset({
           name:          prod.name,
@@ -79,8 +84,10 @@ function ProductFormInner() {
         if (prod.images?.length) setGalleryPreviews(prod.images);
       }
     }
+  } catch (e) {
+    console.error('PRODUCT FORM DEBUG — threw an exception:', e);
   }
-
+}
   async function addCategory() {
     if (!newCat.trim() || !store) return;
     setAddingCat(true);

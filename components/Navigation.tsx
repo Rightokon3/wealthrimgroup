@@ -20,6 +20,7 @@ export default function Navigation() {
   const [mobileOpen,   setMobileOpen]   = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [scrolled,     setScrolled]     = useState(false);
+  const [signingOut,   setSigningOut]   = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll();
   const scaleX = useTransform(scrollYProgress, [0, 1], [0, 1]);
@@ -42,7 +43,18 @@ export default function Navigation() {
   }, []);
 
   const handleSignOut = async () => {
-    await signOut(); setUserMenuOpen(false); router.push('/');
+    if (signingOut) return; // guard against double-clicks
+    setSigningOut(true);
+    try {
+      await signOut();
+    } catch (err) {
+      console.error('Sign out failed:', err);
+    } finally {
+      setSigningOut(false);
+      setUserMenuOpen(false);
+      router.push('/');
+      router.refresh();
+    }
   };
 
   const avatar = profile?.full_name?.charAt(0).toUpperCase() ?? user?.email?.charAt(0).toUpperCase() ?? '?';
@@ -184,9 +196,9 @@ export default function Navigation() {
                       </div>
 
                       <div className="p-1.5 border-t border-gray-100">
-                        <button onClick={handleSignOut}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-colors">
-                          <LogOut className="w-4 h-4" /> Sign Out
+                        <button onClick={handleSignOut} disabled={signingOut}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
+                          <LogOut className="w-4 h-4" /> {signingOut ? 'Signing out…' : 'Sign Out'}
                         </button>
                       </div>
                     </motion.div>
@@ -266,9 +278,9 @@ export default function Navigation() {
                         My Orders
                       </Link>
                     )}
-                    <button onClick={handleSignOut}
-                      className="w-full text-left py-2.5 px-3 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50">
-                      Sign Out
+                    <button onClick={handleSignOut} disabled={signingOut}
+                      className="w-full text-left py-2.5 px-3 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
+                      {signingOut ? 'Signing out…' : 'Sign Out'}
                     </button>
                   </>) : (<>
                     <Link href="/auth/login" onClick={() => setMobileOpen(false)}

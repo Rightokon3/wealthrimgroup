@@ -49,9 +49,10 @@ export default function VendorDashboard() {
     else if (user && profile && !isVendor) router.replace('/');
   }, [user, isVendor, profile]);
 
-  async function fetchAll() {
+async function fetchAll() {
     setLoading(true);
-    const { data: s } = await supabase.from('stores').select('*').eq('vendor_id', user!.id).order('created_at', { ascending: true }).limit(1).maybeSingle();
+    const { data: s, error } = await supabase.from('stores').select('*').eq('vendor_id', user!.id).order('created_at', { ascending: true }).limit(1).maybeSingle();
+    console.log('STORE DEBUG:', { store: s, error, userId: user!.id });
     if (!s) { router.replace('/vendor/setup'); return; }
     setStore(s);
     const [pr, or] = await Promise.all([

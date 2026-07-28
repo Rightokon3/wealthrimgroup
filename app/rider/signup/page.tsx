@@ -70,7 +70,22 @@ export default function RiderSignup() {
       setLoading(false); return;
     }
 
-    router.replace('/rider/dashboard');
+    // 3. Trigger verification email — fire and forget, don't block navigation
+    fetch('/api/rider/send-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: authData.user.id,
+        email: form.email,
+        full_name: form.full_name,
+      }),
+    }).catch(() => {
+      // Non-fatal — rider can resend from the verify-pending page.
+    });
+
+    router.replace(
+      `/rider/verify-pending?email=${encodeURIComponent(form.email)}&uid=${authData.user.id}`
+    );
   }
 
   return (
