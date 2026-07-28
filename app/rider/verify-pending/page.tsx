@@ -1,10 +1,10 @@
 'use client';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { MailCheck, Loader2 } from 'lucide-react';
 
-export default function VerifyPending() {
+function VerifyPendingInner() {
   const params = useSearchParams();
   const email = params.get('email') || '';
   const userId = params.get('uid') || '';
@@ -66,5 +66,24 @@ export default function VerifyPending() {
         </button>
       </motion.div>
     </div>
+  );
+}
+
+function VerifyPendingFallback() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl shadow-gray-100 border border-gray-100 p-8 text-center">
+        <Loader2 className="w-10 h-10 text-green-500 animate-spin mx-auto mb-4" />
+        <h1 className="text-xl font-black text-gray-900">Loading…</h1>
+      </div>
+    </div>
+  );
+}
+
+export default function VerifyPending() {
+  return (
+    <Suspense fallback={<VerifyPendingFallback />}>
+      <VerifyPendingInner />
+    </Suspense>
   );
 }
