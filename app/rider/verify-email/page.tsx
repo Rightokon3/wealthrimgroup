@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
@@ -7,7 +7,7 @@ import Link from 'next/link';
 
 type Status = 'verifying' | 'success' | 'error';
 
-export default function VerifyEmail() {
+function VerifyEmailInner() {
   const router = useRouter();
   const params = useSearchParams();
   const token = params.get('token');
@@ -80,5 +80,24 @@ export default function VerifyEmail() {
         )}
       </motion.div>
     </div>
+  );
+}
+
+function VerifyEmailFallback() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl shadow-gray-100 border border-gray-100 p-8 text-center">
+        <Loader2 className="w-10 h-10 text-green-500 animate-spin mx-auto mb-4" />
+        <h1 className="text-xl font-black text-gray-900">Loading…</h1>
+      </div>
+    </div>
+  );
+}
+
+export default function VerifyEmail() {
+  return (
+    <Suspense fallback={<VerifyEmailFallback />}>
+      <VerifyEmailInner />
+    </Suspense>
   );
 }
