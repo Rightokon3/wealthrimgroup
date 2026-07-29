@@ -153,7 +153,7 @@ export async function sendOrderNotificationEmail(data: OrderEmailData) {
 
       <!-- CTA -->
       <div style="text-align:center;margin-bottom:24px;">
-        <a href="${process.env.NEXT_PUBLIC_APP_URL}/vendor/dashboard"
+        <a href="${process.env.NEXT_PUBLIC_BASE_URL}/vendor/dashboard"
           style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#f97316,#dc2626);color:white;font-weight:900;font-size:15px;border-radius:14px;text-decoration:none;">
           View Order in Dashboard →
         </a>

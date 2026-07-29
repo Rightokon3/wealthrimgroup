@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const link = `${process.env.NEXT_PUBLIC_APP_URL}/rider/verify-email?token=${rawToken}`;
+  const link = `${process.env.NEXT_PUBLIC_BASE_URL}/rider/verify-email?token=${rawToken}`;
 
   // Don't block the response on Gmail — send in the background.
   sendVerificationEmail(email, full_name || 'Rider', link).catch(err => {

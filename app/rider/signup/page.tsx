@@ -22,7 +22,7 @@ export default function RiderSignup() {
   const [error, setError] = useState('');
 
   const [form, setForm] = useState({
-    full_name: '', email: '', phone: '', password: '',
+    full_name: '', email: '', phone: '', password: '', city: '',
     vehicle_type: 'motorcycle' as VehicleType,
     vehicle_plate: '',
   });
@@ -61,6 +61,7 @@ export default function RiderSignup() {
       user_id:       authData.user.id,
       full_name:     form.full_name,
       phone:         form.phone,
+      city:          form.city.trim(),
       vehicle_type:  form.vehicle_type,
       vehicle_plate: form.vehicle_plate || null,
     });
@@ -149,6 +150,16 @@ export default function RiderSignup() {
               </div>
 
               <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">City *</label>
+                <input
+                  type="text" value={form.city} onChange={e => set('city', e.target.value)}
+                  placeholder="e.g. Lagos"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium"
+                />
+                <p className="text-xs text-gray-400 mt-1">Used to match you with nearby delivery orders.</p>
+              </div>
+
+              <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Password *</label>
                 <div className="relative">
                   <input
@@ -165,7 +176,7 @@ export default function RiderSignup() {
 
               <button
                 onClick={() => {
-                  if (!form.full_name || !form.email || !form.phone || !form.password) {
+                  if (!form.full_name || !form.email || !form.phone || !form.city || !form.password) {
                     setError('Please fill in all fields.'); return;
                   }
                   setError(''); setStep(2);

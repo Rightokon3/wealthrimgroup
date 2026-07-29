@@ -20,6 +20,18 @@ const STATUS_STYLE: Partial<Record<OrderStatus, string>> = {
 
 type Tab = 'available' | 'active' | 'history';
 
+function formatSince(iso: string | null | undefined) {
+  if (!iso) return null;
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ${mins % 60}m`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d`;
+}
+
 export default function RiderDashboard() {
   const router = useRouter();
   const { user, isLoggedIn, loading: al, signOut } = useAuth();
@@ -29,6 +41,7 @@ export default function RiderDashboard() {
   const [tab,       setTab]       = useState<Tab>('available');
   const [loading,   setLoading]   = useState(true);
   const [toggling,  setToggling]  = useState(false);
+  const [toggleErr, setToggleErr] = useState('');
   const [accepting, setAccepting] = useState<string | null>(null);
 
   // Auth guard — matches vendor dashboard pattern exactly
@@ -69,9 +82,22 @@ export default function RiderDashboard() {
   async function toggleOnline() {
     if (!rider) return;
     setToggling(true);
+    setToggleErr('');
     const next = !rider.is_online;
-    await supabase.from('riders').update({ is_online: next }).eq('id', rider.id);
-    setRider(r => r ? { ...r, is_online: next } : r);
+    const now = new Date().toISOString();
+
+    const { error } = await supabase
+      .from('riders')
+      .update({ is_online: next, last_status_change: now })
+      .eq('id', rider.id);
+
+    if (error) {
+      setToggleErr('Could not update status. Try again.');
+      setToggling(false);
+      return;
+    }
+
+    setRider(r => r ? { ...r, is_online: next, last_status_change: now } : r);
     setToggling(false);
   }
 
@@ -111,6 +137,8 @@ export default function RiderDashboard() {
     { id: 'history',   label: 'History' },
   ];
 
+  const sinceLabel = formatSince(rider?.last_status_change);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Top bar */}
@@ -126,23 +154,35 @@ export default function RiderDashboard() {
             </div>
           </div>
 
-          {/* Online toggle */}
-          <button
-            onClick={toggleOnline} disabled={toggling}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-sm transition-all ${
-              rider?.is_online
-                ? 'bg-green-500 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            {toggling
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : rider?.is_online
-                ? <><ToggleRight className="w-4 h-4" /> Online</>
-                : <><ToggleLeft className="w-4 h-4" /> Offline</>
-            }
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            {/* Online toggle */}
+            <button
+              onClick={toggleOnline} disabled={toggling}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-sm transition-all ${
+                rider?.is_online
+                  ? 'bg-green-500 text-white'
+                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+              }`}
+            >
+              {toggling
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : rider?.is_online
+                  ? <><ToggleRight className="w-4 h-4" /> Online</>
+                  : <><ToggleLeft className="w-4 h-4" /> Offline</>
+              }
+            </button>
+            {sinceLabel && !toggling && (
+              <span className="text-[11px] text-gray-500">
+                {rider?.is_online ? 'Online' : 'Offline'} for {sinceLabel}
+              </span>
+            )}
+          </div>
         </div>
+        {toggleErr && (
+          <div className="max-w-lg mx-auto px-4 pb-3">
+            <p className="text-xs text-red-400 font-medium">{toggleErr}</p>
+          </div>
+        )}
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-5">

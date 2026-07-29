@@ -1,10 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
-import Navigation from '@/components/Navigation';
+import SiteChrome from '@/components/SiteChrome';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { CartProvider } from '@/contexts/CartContext';
-import Footer from '@/components/Footer';
 import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration';
 
 const jakarta = Plus_Jakarta_Sans({ subsets: ['latin'] });
@@ -38,9 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AuthProvider>
           <CartProvider>
             <ServiceWorkerRegistration />
-            <Navigation />
-            <main className="min-h-screen">{children}</main>
-            <Footer />
+            <SiteChrome>{children}</SiteChrome>
           </CartProvider>
         </AuthProvider>
       </body>

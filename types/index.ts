@@ -83,6 +83,7 @@ export interface Rider {
   total_deliveries: number;
   created_at: string;
   updated_at: string;
+  last_status_change: string | null;
 }
 
 export interface SavedAddress {

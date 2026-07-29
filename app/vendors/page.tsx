@@ -126,7 +126,7 @@ function BusinessesInner() {
     const t = setTimeout(() => {
       const params = new URLSearchParams(Array.from(searchParams.entries()));
       if (search) params.set('search', search); else params.delete('search');
-      router.replace(`/businesses?${params.toString()}`, { scroll: false });
+      router.replace(`/vendors?${params.toString()}`, { scroll: false });
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
