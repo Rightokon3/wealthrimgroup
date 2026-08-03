@@ -21,6 +21,17 @@ interface SavedAddress {
   city: string; state: string | null; is_default: boolean;
 }
 
+interface VirtualAccount {
+  accountNumber: string;
+  accountName: string;
+  bankName: string;
+}
+
+interface WaitingOrder {
+  id: string;
+  orderNum: string;
+}
+
 interface Rider {
   id: string;
   full_name: string;
@@ -29,14 +40,6 @@ interface Rider {
 }
 
 const RIDER_ETA_MIN = 20; // fixed — no live GPS to compute a real ETA yet
-
-// One fixed company account shown to every customer who pays by transfer.
-// Edit these three values to match your real bank details.
-const BANK_ACCOUNT = {
-  accountName:   'Wealthy Realm Int Ltd',
-  accountNumber: '3003841291',
-  bankName:      'Guaranty Trust Bank',
-};
 
 function CheckoutInner() {
   const router  = useRouter();
@@ -61,8 +64,11 @@ function CheckoutInner() {
   const [selectedAddrId, setSelectedAddrId] = useState<string | null>(null);
 
   // Payment gateway state
-  const [showBankModal, setShowBankModal] = useState(false);
-  const [copiedField,   setCopiedField]   = useState<string | null>(null);
+  const [showBankModal,   setShowBankModal]   = useState(false);
+  const [virtualAccount,  setVirtualAccount]  = useState<VirtualAccount | null>(null);
+  const [loadingVA,       setLoadingVA]       = useState(false);
+  const [copiedField,     setCopiedField]     = useState<string | null>(null);
+  const [waitingOrder,    setWaitingOrder]    = useState<WaitingOrder | null>(null);
 
   // Validation modal state
   const [showValidationModal, setShowValidationModal] = useState(false);
@@ -121,6 +127,47 @@ function CheckoutInner() {
   const platformFee  = Math.round(subtotal * 0.10);
   const total        = subtotal + deliveryFee;
 
+  // ── Realtime + polling fallback while a transfer order is pending ──
+  useEffect(() => {
+    if (!waitingOrder) return;
+
+    const channel = supabase
+      .channel(`order-${waitingOrder.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${waitingOrder.id}` },
+        (payload: any) => {
+          if (payload.new.payment_status === 'paid') {
+            setStoreName(store?.name ?? '');
+            setOrderId(payload.new.id);
+            setOrderNum(payload.new.order_number);
+            setWaitingOrder(null);
+          }
+        }
+      )
+      .subscribe();
+
+    // Fallback poll in case Realtime isn't enabled on this table yet
+    const poll = setInterval(async () => {
+      const { data } = await supabase
+        .from('orders')
+        .select('payment_status, order_number')
+        .eq('id', waitingOrder.id)
+        .single();
+      if (data?.payment_status === 'paid') {
+        setStoreName(store?.name ?? '');
+        setOrderId(waitingOrder.id);
+        setOrderNum(data.order_number);
+        setWaitingOrder(null);
+      }
+    }, 5000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(poll);
+    };
+  }, [waitingOrder, store]);
+
   // ── GPS location ──────────────────────────────────────────────
   function detectLocation() {
     if (!navigator.geolocation) return;
@@ -133,10 +180,38 @@ function CheckoutInner() {
   }
 
   // ── Payment method change ────────────────────────────────────
-  function handlePaymentChange(value: PaymentMethod) {
+  async function handlePaymentChange(value: PaymentMethod) {
     setPayment(value);
     if (value === 'transfer') {
       setShowBankModal(true);
+      if (!virtualAccount && user) {
+        setLoadingVA(true);
+        try {
+          const fullName = profile?.full_name?.trim() ?? '';
+          const [firstName, ...rest] = fullName.split(' ');
+          const lastName = rest.join(' ');
+
+          const res = await fetch('/api/get-virtual-account', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              profileId: user.id,
+              email: user.email ?? profile?.email,
+              firstName: firstName || undefined,
+              lastName:  lastName || undefined,
+              phone,
+            }),
+          });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+          setVirtualAccount(data);
+        } catch (e: any) {
+          setError(e.message ?? 'Failed to set up your bank transfer account.');
+          setShowBankModal(false);
+        } finally {
+          setLoadingVA(false);
+        }
+      }
     }
   }
 
@@ -276,23 +351,43 @@ function CheckoutInner() {
     }
   }
 
-  // ── Bank transfer — customer confirms they've sent the money,
-  //    order goes in as pending and lands on the normal success screen.
-  //    No auto-detection: staff/admin marks it paid once the transfer lands.
+  // ── Bank transfer — one pending transfer order per customer ─────
   async function payWithTransfer() {
     if (!validateForm()) return;
+    if (!user) return;
     setPlacing(true); setError('');
     try {
+      const { data: existing } = await supabase
+        .from('orders')
+        .select('id, order_number')
+        .eq('customer_id', user.id)
+        .eq('payment_method', 'transfer')
+        .eq('payment_status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        setWaitingOrder({ id: existing.id, orderNum: existing.order_number });
+        return;
+      }
+
       const order = await createOrder();
       clearCart();
-      setStoreName(store?.name ?? '');
-      setOrderId(order.id);
-      setOrderNum(order.order_number);
+      setWaitingOrder({ id: order.id, orderNum: order.order_number });
     } catch (e: any) {
       setError(e.message ?? 'Failed to place order.');
     } finally {
       setPlacing(false);
     }
+  }
+
+  async function cancelWaitingOrder() {
+    if (!waitingOrder) return;
+    await supabase.from('order_items').delete().eq('order_id', waitingOrder.id);
+    await supabase.from('orders').delete().eq('id', waitingOrder.id);
+    setWaitingOrder(null);
+    setPayment('cash_on_delivery');
   }
 
   // ── Card payment via Paystack ──────────────────────────────────
@@ -383,6 +478,48 @@ function CheckoutInner() {
     </div>
   );
 
+  // ── Waiting for bank transfer to land ──────────────────────────
+  if (waitingOrder) return (
+    <div className="min-h-screen pt-[64px] flex items-center justify-center bg-gray-50 px-4">
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-center max-w-sm w-full">
+        <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-5 relative">
+          <Clock className="w-9 h-9 text-blue-500" />
+          <div className="absolute inset-0 rounded-full border-4 border-blue-200 border-t-blue-500 animate-spin" />
+        </div>
+        <h2 className="text-2xl font-black text-gray-900 mb-2">Waiting for your transfer</h2>
+        <p className="text-gray-500 text-sm mb-5">
+          Order <span className="font-mono font-bold">{waitingOrder.orderNum}</span> will confirm automatically the moment we receive your payment. You can leave this page — we'll update your order status either way.
+        </p>
+
+        {virtualAccount && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 text-left space-y-3 mb-5">
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wide font-bold">Account Number</p>
+                <p className="text-sm font-black text-gray-900">{virtualAccount.accountNumber}</p>
+              </div>
+              <button onClick={() => copyToClipboard(virtualAccount.accountNumber, 'wait-number')}
+                className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-100">
+                {copiedField === 'wait-number' ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-gray-400" />}
+              </button>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Bank</span><span className="font-bold text-gray-900">{virtualAccount.bankName}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Amount</span><span className="font-black text-gray-900">₦{total.toLocaleString()}</span>
+            </div>
+          </div>
+        )}
+
+        <button onClick={cancelWaitingOrder}
+          className="w-full py-3 rounded-xl border border-gray-200 text-gray-500 font-bold text-sm hover:bg-gray-50">
+          Cancel and choose a different payment method
+        </button>
+      </motion.div>
+    </div>
+  );
+
   // ── Success screen ────────────────────────────────────────────
   if (orderId) return (
     <div className="min-h-screen pt-[64px] flex items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
@@ -397,7 +534,6 @@ function CheckoutInner() {
         <p className="text-gray-500 mb-5">
           {isRealEstate ? 'Your viewing request has been sent to' : 'Your order has been sent to'}{' '}
           <span className="font-bold text-gray-700">{storeName}</span>.
-          {payment === 'transfer' && ' We\'ll confirm your payment once it lands.'}
         </p>
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm mb-6 text-left space-y-2">
           <div className="flex justify-between text-sm"><span className="text-gray-500">Order #</span><span className="font-mono font-black text-xs">{orderNum}</span></div>
@@ -550,7 +686,7 @@ function CheckoutInner() {
         )}
       </AnimatePresence>
 
-      {/* Bank transfer details modal — plain, fixed account, no API call */}
+      {/* Bank transfer details modal */}
       <AnimatePresence>
         {showBankModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -564,39 +700,49 @@ function CheckoutInner() {
               <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mb-4">
                 <Smartphone className="w-6 h-6 text-blue-600" />
               </div>
-              <h3 className="font-black text-gray-900 text-lg mb-1">Bank Transfer Details</h3>
+              <h3 className="font-black text-gray-900 text-lg mb-1">Your transfer account</h3>
               <p className="text-gray-500 text-sm mb-5">
-                Transfer exactly <span className="font-bold text-gray-900">₦{total.toLocaleString()}</span> to the account below, then confirm you've sent it.
+                This account is unique to you and reused for future orders too. Transfer exactly <span className="font-bold text-gray-900">₦{total.toLocaleString()}</span> and we'll confirm automatically.
               </p>
 
-              <div className="space-y-3">
-                {[
-                  { label: 'Account Name',   value: BANK_ACCOUNT.accountName,   key: 'name' },
-                  { label: 'Account Number', value: BANK_ACCOUNT.accountNumber, key: 'number' },
-                  { label: 'Bank',           value: BANK_ACCOUNT.bankName,      key: 'bank' },
-                ].map(f => (
-                  <div key={f.key} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase tracking-wide font-bold">{f.label}</p>
-                      <p className="text-sm font-bold text-gray-900">{f.value}</p>
+              {loadingVA ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : virtualAccount ? (
+                <div className="space-y-3">
+                  {[
+                    { label: 'Account Name',   value: virtualAccount.accountName,   key: 'name' },
+                    { label: 'Account Number', value: virtualAccount.accountNumber, key: 'number' },
+                    { label: 'Bank',           value: virtualAccount.bankName,      key: 'bank' },
+                  ].map(f => (
+                    <div key={f.key} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide font-bold">{f.label}</p>
+                        <p className="text-sm font-bold text-gray-900">{f.value}</p>
+                      </div>
+                      <button onClick={() => copyToClipboard(f.value, f.key)}
+                        className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-100 flex-shrink-0">
+                        {copiedField === f.key ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-gray-400" />}
+                      </button>
                     </div>
-                    <button onClick={() => copyToClipboard(f.value, f.key)}
-                      className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-100 flex-shrink-0">
-                      {copiedField === f.key ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-gray-400" />}
-                    </button>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-red-500">Couldn't load your account details. Please try again.</p>
+              )}
 
-              <button
-                onClick={confirmTransferSent}
-                disabled={placing}
-                className="w-full mt-5 py-3.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-black hover:from-orange-600 hover:to-red-700 disabled:opacity-60 flex items-center justify-center gap-2">
-                {placing
-                  ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Placing...</>
-                  : "I've Sent the Transfer — Place Order"
-                }
-              </button>
+              {virtualAccount && !loadingVA && (
+                <button
+                  onClick={confirmTransferSent}
+                  disabled={placing}
+                  className="w-full mt-5 py-3.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-black hover:from-orange-600 hover:to-red-700 disabled:opacity-60 flex items-center justify-center gap-2">
+                  {placing
+                    ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Placing...</>
+                    : "I've Sent the Transfer — Place Order"
+                  }
+                </button>
+              )}
               <button onClick={() => setShowBankModal(false)}
                 className="w-full mt-2 py-2.5 text-gray-400 font-semibold text-sm hover:text-gray-600">
                 I'll pay later
@@ -797,7 +943,7 @@ function CheckoutInner() {
                 <div className="space-y-3">
                   {[
                     { value: 'cash_on_delivery', label: 'Cash on Delivery',    desc: 'Pay when your order arrives', icon: <Banknote className="w-5 h-5 text-green-600" /> },
-                    { value: 'transfer',         label: 'Bank Transfer',        desc: 'Pay to our account, we confirm manually', icon: <Smartphone className="w-5 h-5 text-blue-600" /> },
+                    { value: 'transfer',         label: 'Bank Transfer',        desc: 'Auto-confirmed once received', icon: <Smartphone className="w-5 h-5 text-blue-600" /> },
                     { value: 'card',             label: 'Debit / Credit Card',  desc: 'Pay securely via Paystack',  icon: <CreditCard className="w-5 h-5 text-purple-600" /> },
                   ].map(opt => (
                     <label key={opt.value}
@@ -810,7 +956,7 @@ function CheckoutInner() {
                     </label>
                   ))}
                 </div>
-                {payment === 'transfer' && (
+                {payment === 'transfer' && virtualAccount && (
                   <button type="button" onClick={() => setShowBankModal(true)}
                     className="w-full mt-3 py-2.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100">
                     View bank account details again
