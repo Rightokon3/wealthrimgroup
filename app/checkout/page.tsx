@@ -117,7 +117,7 @@ function CheckoutInner() {
   }, [city, store, customerCoords]);
 
   const isRealEstate = store?.category === 'real_estate';
-  const deliveryFee  = isRealEstate ? 0 : (feeResult?.fee ?? 3000);
+  const deliveryFee  = isRealEstate ? 0 : (feeResult?.fee ?? 100);
   const platformFee  = Math.round(subtotal * 0.10);
   const total        = subtotal + deliveryFee;
 
