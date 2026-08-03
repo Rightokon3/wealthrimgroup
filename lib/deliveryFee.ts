@@ -24,7 +24,7 @@ export function haversineKm(a: Coords, b: Coords): number {
 function toRad(deg: number) { return (deg * Math.PI) / 180; }
 
 // ── Rate configuration ───────────────────────────────────────────
-const RATE_PER_KM = 1_0; // ₦1,000 per km
+const RATE_PER_KM = 1_00; // ₦1,000 per km
 const MIN_FEE     = 500;   // floor — very short deliveries still cost something
 const MAX_FEE: number | null = null; // set e.g. 5000 to cap long-distance fees; null = uncapped
 const ROUND_TO    = 50;    // round the computed fee to the nearest ₦50
