@@ -5,16 +5,18 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, ShoppingBag, Store, Users,
-  Shield, LogOut, Menu, X
+  Shield, ShieldPlus, Settings, LogOut, Menu, X
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
 const NAV = [
-  { href: '/admin',         label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
-  { href: '/admin/orders',  label: 'Orders',    icon: <ShoppingBag className="w-4 h-4" /> },
-  { href: '/admin/stores',  label: 'Stores',    icon: <Store className="w-4 h-4" /> },
-  { href: '/admin/users',   label: 'Users',     icon: <Users className="w-4 h-4" /> },
+  { href: '/admin',               label: 'Dashboard',      icon: <LayoutDashboard className="w-4 h-4" /> },
+  { href: '/admin/orders',        label: 'Orders',         icon: <ShoppingBag className="w-4 h-4" /> },
+  { href: '/admin/stores',        label: 'Stores',         icon: <Store className="w-4 h-4" /> },
+  { href: '/admin/users',         label: 'Users',          icon: <Users className="w-4 h-4" /> },
+  { href: '/admin/manage-admins', label: 'Manage Admins',  icon: <ShieldPlus className="w-4 h-4" /> },
+  { href: '/admin/settings',      label: 'Settings',       icon: <Settings className="w-4 h-4" /> },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -69,7 +71,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1">
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {NAV.map(n => {
             const active = pathname === n.href;
             return (
@@ -87,7 +89,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         <div className="p-3 border-t border-gray-800">
           <button
-            onClick={async () => { await signOut(); router.push('/'); }}
+            onClick={async () => { await signOut(); router.push('/auth/login'); }}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-800 hover:text-white transition-all"
           >
             <LogOut className="w-4 h-4" /> Sign Out
