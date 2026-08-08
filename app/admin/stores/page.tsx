@@ -4,6 +4,8 @@ import { motion } from 'framer-motion';
 import { Search, CheckCircle, XCircle, RefreshCw, Store as StoreIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Store, CATEGORY_META } from '@/types';
+import EditStoreModal from '@/components/admin/EditStoreModal';
+import { Pencil } from 'lucide-react';
 
 export default function AdminStores() {
   const [stores,   setStores]   = useState<Store[]>([]);
@@ -12,6 +14,7 @@ export default function AdminStores() {
   const [search,   setSearch]   = useState('');
   const [catFilter, setCatFilter] = useState<'all' | 'food' | 'real_estate' | 'fashion'>('all');
   const [toggling, setToggling] = useState<string | null>(null);
+  const [editingStore, setEditingStore] = useState<Store | null>(null);
 
   useEffect(() => { fetchStores(); }, []);
 
@@ -149,6 +152,12 @@ export default function AdminStores() {
                     {store.is_verified ? 'Unverify' : 'Verify'}
                   </button>
                   <button
+  onClick={() => setEditingStore(store)}
+  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border bg-gray-800 text-gray-400 border-gray-700 hover:bg-orange-900/30 hover:text-orange-400 hover:border-orange-800 transition-all">
+  <Pencil className="w-3.5 h-3.5" />
+  Edit
+</button>
+                  <button
                     onClick={() => toggleActive(store)}
                     disabled={toggling === store.id + '_active'}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all disabled:opacity-50 ${
@@ -165,6 +174,20 @@ export default function AdminStores() {
           })}
         </div>
       )}
+      {editingStore && (
+  <EditStoreModal
+    store={editingStore}
+    onClose={() => setEditingStore(null)}
+    onUpdated={(updated) => {
+      setStores(prev => prev.map(s => s.id === updated.id ? updated : s));
+      setEditingStore(null);
+    }}
+    onDeleted={(id) => {
+      setStores(prev => prev.filter(s => s.id !== id));
+      setEditingStore(null);
+    }}
+  />
+)}
     </div>
   );
 }
