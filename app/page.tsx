@@ -15,6 +15,8 @@ import { Business } from '@/types';
 import { BusinessCategory } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 
+
+
 const CATEGORIES: { value: StoreCategory; emoji: string; label: string; bg: string; text: string }[] = [
   { value:'food',        emoji:'🍛', label:'Food & Delivery',  bg:'bg-orange-50 border-orange-200', text:'text-orange-700' },
   { value:'real_estate', emoji:'🏠', label:'Real Estate',       bg:'bg-amber-50 border-amber-200',   text:'text-amber-700' },
@@ -31,9 +33,9 @@ const STATS = [
 ];
 
 const HERO_IMAGES = [
-  'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1400&q=80',
-  'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1400&q=80',
-  'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=1400&q=80',
+  '/image/image1.png',
+  '/image/image2.png',
+  '/image/image 3.png',
 ];
 
 function StoreCard({ store }: { store: Store }) {
