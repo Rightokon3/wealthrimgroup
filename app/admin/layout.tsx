@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import NotificationBell from '@/components/NotificationBell';
 
 const NAV = [
   { href: '/admin',               label: 'Dashboard',      icon: <LayoutDashboard className="w-4 h-4" /> },
@@ -30,14 +31,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (al) return;
     if (!isLoggedIn) { router.replace('/auth/login?next=/admin'); return; }
 
-    // Verify admin role directly from DB — don't trust client state alone
+    // Verify admin role directly from DB — don't trust client state alone.
+    // Both 'admin' and 'super_admin' are allowed into the panel; the
+    // distinction between them is enforced per-feature, not at this gate.
     supabase
       .from('profiles')
       .select('role')
       .eq('id', user!.id)
       .single()
       .then(({ data }) => {
-        if (data?.role !== 'admin') { router.replace('/'); return; }
+        if (data?.role !== 'admin' && data?.role !== 'super_admin') { router.replace('/'); return; }
         setChecked(true);
       });
   }, [al, isLoggedIn, user]);
@@ -61,14 +64,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         flex flex-col z-50 transition-transform duration-300
         ${sideOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
-        <div className="p-5 border-b border-gray-800 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center">
-            <Shield className="w-5 h-5 text-white" />
+        <div className="p-5 border-b border-gray-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center flex-shrink-0">
+              <Shield className="w-5 h-5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <div className="font-black text-white text-sm">Drovo</div>
+              <div className="text-xs text-orange-400 font-bold">Admin Panel</div>
+            </div>
           </div>
-          <div>
-            <div className="font-black text-white text-sm">Drovo</div>
-            <div className="text-xs text-orange-400 font-bold">Admin Panel</div>
-          </div>
+          {user && <NotificationBell userId={user.id} />}
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
@@ -100,11 +106,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Main */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Mobile topbar */}
-        <header className="lg:hidden bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-3 sticky top-0 z-30">
-          <button onClick={() => setSideOpen(v => !v)} className="text-gray-400 hover:text-white">
-            {sideOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
-          <span className="font-black text-white text-sm">AfriCart Admin</span>
+        <header className="lg:hidden bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between gap-3 sticky top-0 z-30">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSideOpen(v => !v)} className="text-gray-400 hover:text-white">
+              {sideOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+            <span className="font-black text-white text-sm">Drovo Admin</span>
+          </div>
+          {user && <NotificationBell userId={user.id} />}
         </header>
 
         <main className="flex-1 overflow-auto bg-gray-950 p-6">

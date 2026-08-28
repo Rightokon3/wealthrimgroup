@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Store, Product, Order, CATEGORY_META, OrderStatus } from '@/types';
+import NotificationBell from '@/components/vendor/NotificationBell';
 
 type Tab = 'overview'|'products'|'orders'|'earnings';
 
@@ -52,7 +53,7 @@ export default function VendorDashboard() {
 async function fetchAll() {
     setLoading(true);
     const { data: s, error } = await supabase.from('stores').select('*').eq('vendor_id', user!.id).order('created_at', { ascending: true }).limit(1).maybeSingle();
-    console.log('STORE DEBUG:', { store: s, error, userId: user!.id });
+   
     if (!s) { router.replace('/vendor/setup'); return; }
     setStore(s);
     const [pr, or] = await Promise.all([
@@ -69,10 +70,16 @@ async function fetchAll() {
     setProducts(p => p.map(x => x.id === id ? { ...x, is_available: !cur } : x));
   }
 
-  async function advanceOrder(id: string, next: OrderStatus) {
-    await supabase.from('orders').update({ status: next }).eq('id', id);
-    setOrders(o => o.map(x => x.id === id ? { ...x, status: next } : x));
-  }
+async function advanceOrder(id: string, next: OrderStatus) {
+  await supabase.from('orders').update({ status: next }).eq('id', id);
+  setOrders(o => o.map(x => x.id === id ? { ...x, status: next } : x));
+
+  fetch('/api/notify-vendor', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'order_status', orderId: id, status: next }),
+  }).catch(err => console.warn('Customer status notification failed:', err));
+}
 
   if (al || (isLoggedIn && !profile)) return (
     <div className="min-h-screen pt-[64px] flex items-center justify-center">
@@ -163,6 +170,7 @@ async function fetchAll() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {user && <NotificationBell vendorId={user.id} />}
             {pendingOrders.length > 0 && (
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-bold">
                 <Bell className="w-3.5 h-3.5"/> {pendingOrders.length} pending

@@ -68,27 +68,33 @@ export default function RiderOrderDetail() {
     setLoading(false);
   }
 
-  async function updateStatus(next: RiderStatus) {
-    if (!order || !rider) return;
-    setUpdating(true);
-    const updates: Partial<Order> & { total_deliveries?: number } = { status: next };
+async function updateStatus(next: RiderStatus) {
+  if (!order || !rider) return;
+  setUpdating(true);
+  const updates: Partial<Order> & { total_deliveries?: number } = { status: next };
 
-    const { error } = await supabase.from('orders').update(updates).eq('id', order.id);
-    if (!error) {
-      setOrder(o => o ? { ...o, status: next } : o);
-      // Increment total_deliveries on final delivery
-      if (next === 'delivered') {
-        await supabase.from('riders')
-          .update({ total_deliveries: rider.total_deliveries + 1 })
-          .eq('id', rider.id);
-        setRider(r => r ? { ...r, total_deliveries: r.total_deliveries + 1 } : r);
-      }
-    }
-    setUpdating(false);
+  const { error } = await supabase.from('orders').update(updates).eq('id', order.id);
+  if (!error) {
+    setOrder(o => o ? { ...o, status: next } : o);
+
+    fetch('/api/notify-vendor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'order_status', orderId: order.id, status: next }),
+    }).catch(err => console.warn('Customer status notification failed:', err));
+
     if (next === 'delivered') {
-      setTimeout(() => router.replace('/rider/dashboard'), 1500);
+      await supabase.from('riders')
+        .update({ total_deliveries: rider.total_deliveries + 1 })
+        .eq('id', rider.id);
+      setRider(r => r ? { ...r, total_deliveries: r.total_deliveries + 1 } : r);
     }
   }
+  setUpdating(false);
+  if (next === 'delivered') {
+    setTimeout(() => router.replace('/rider/dashboard'), 1500);
+  }
+}
 
   if (loading || al) return (
     <div className="min-h-screen flex items-center justify-center">

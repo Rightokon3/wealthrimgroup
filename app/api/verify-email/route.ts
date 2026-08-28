@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { mailer } from '@/lib/mailer';
+import { sendPushToUser } from '@/lib/web-push-server';
+import { notifyAdmins } from '@/lib/notify-admins';
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token');
-  const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? 'http://https://wealthrimgroup.netlify.app/0').replace(/\/$/, '');
+  const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000/').replace(/\/$/, '');
 
   if (!token) {
     return NextResponse.redirect(`${baseUrl}/auth/verify-result?status=invalid`);
@@ -43,7 +45,7 @@ export async function GET(req: NextRequest) {
 
     const { data: profileRow } = await supabaseAdmin
       .from('profiles')
-      .select('full_name')
+      .select('full_name, role')
       .eq('id', record.user_id)
       .maybeSingle();
 
@@ -67,8 +69,48 @@ export async function GET(req: NextRequest) {
         `,
       });
     }
+
+    // In-app bell + push notification — vendors and customers get their own welcome.
+    if (profileRow?.role === 'vendor' || profileRow?.role === 'customer') {
+      const title = 'Welcome to Drovo! 🎉';
+      const message = profileRow.role === 'vendor'
+        ? `Hi ${profileRow?.full_name ?? 'there'}, your vendor account is verified. Set up your store and start selling on Drovo today.`
+        : `Hi ${profileRow?.full_name ?? 'there'}, your account is verified. Start exploring food, fashion, and real estate near you.`;
+
+      await Promise.all([
+        supabaseAdmin.from('notifications').insert({
+          user_id: record.user_id,
+          type: 'welcome',
+          title,
+          body: message,
+        }),
+        sendPushToUser(record.user_id, {
+          title,
+          body: message,
+          url: profileRow.role === 'vendor' ? '/vendor/dashboard' : '/',
+        }),
+      ]);
+    }
+
+    // Admin broadcast: notify admins (and super admins) whenever a new
+    // customer, vendor, or rider account is verified. New admin accounts
+    // are NOT broadcast here — that's handled separately, super-admin only.
+    if (
+      profileRow?.role === 'customer' ||
+      profileRow?.role === 'vendor' ||
+      profileRow?.role === 'rider'
+    ) {
+      const roleLabel = profileRow.role;
+      await notifyAdmins({
+        type: `new_${roleLabel}`,
+        title: `New ${roleLabel} joined`,
+        body: `${profileRow?.full_name ?? 'A new user'} just verified their ${roleLabel} account.`,
+        audience: 'admins_and_super',
+        url: '/admin/users',
+      });
+    }
   } catch (err) {
-    console.warn('Welcome email failed:', err);
+    console.warn('Welcome/admin notification failed:', err);
   }
 
   return NextResponse.redirect(`${baseUrl}/auth/verify-result?status=success`);

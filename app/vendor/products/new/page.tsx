@@ -13,11 +13,8 @@ import { Suspense } from 'react';
 interface ProductForm {
   name: string; description: string; price: number;
   category_id: string; is_available: boolean; is_featured: boolean;
-  // Real estate
   property_type: string; bedrooms: number; bathrooms: number; area_sqm: number;
-  // Fashion
   sizes: string; colors: string;
-  // Food — nothing extra
 }
 
 const ic = 'w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none bg-gray-50 focus:bg-white';
@@ -126,12 +123,10 @@ async function loadStore() {
         is_featured:   data.is_featured,
         image_url:     imageUrl,
         images:        galleryUrls,
-        // Real estate fields
         property_type: store.category === 'real_estate' ? data.property_type || null : null,
         bedrooms:      store.category === 'real_estate' ? +data.bedrooms || null : null,
         bathrooms:     store.category === 'real_estate' ? +data.bathrooms || null : null,
         area_sqm:      store.category === 'real_estate' ? +data.area_sqm || null : null,
-        // Fashion fields
         sizes:         store.category === 'fashion' ? data.sizes?.split(',').map(s=>s.trim()).filter(Boolean) : [],
         colors:        store.category === 'fashion' ? data.colors?.split(',').map(c=>c.trim()).filter(Boolean) : [],
       };
@@ -142,6 +137,14 @@ async function loadStore() {
       } else {
         const { error: err } = await supabase.from('products').insert([payload]);
         if (err) throw err;
+
+        // Notify admins/super-admins of the new product — best-effort,
+        // don't block the success screen on it.
+        fetch('/api/notify-admins', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'new_product', storeName: store.name, productName: data.name }),
+        }).catch(err => console.warn('Admin product notification failed:', err));
       }
 
       setSaved(true);
@@ -175,7 +178,6 @@ async function loadStore() {
 
   return (
     <div className="min-h-screen pt-[64px] bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-[760px] mx-auto px-6 py-4 flex items-center justify-between">
           <div>
@@ -198,7 +200,6 @@ async function loadStore() {
             </div>
           )}
 
-          {/* Basic info */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
             <h2 className="font-black text-gray-900">
               {store.category === 'food' ? '🍛 Food Item Details' : store.category === 'fashion' ? '👗 Product Details' : '🏠 Property Details'}
@@ -219,7 +220,6 @@ async function loadStore() {
                 placeholder={store.category === 'food' ? 'Ingredients, portion size, spice level...' : store.category === 'fashion' ? 'Material, style, care instructions...' : 'Features, amenities, location highlights...'} />
             </div>
 
-            {/* Category */}
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
                 {store.category === 'food' ? 'Menu Section' : 'Category'}
@@ -245,7 +245,6 @@ async function loadStore() {
             </div>
           </div>
 
-          {/* Price */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="font-black text-gray-900 mb-4">Pricing</h2>
             <div>
@@ -279,7 +278,6 @@ async function loadStore() {
             )}
           </div>
 
-          {/* Category-specific fields */}
           {store.category === 'real_estate' && (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
               <h2 className="font-black text-gray-900">Property Details</h2>
@@ -324,13 +322,11 @@ async function loadStore() {
             </div>
           )}
 
-          {/* Images */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
             <h2 className="font-black text-gray-900">
               {store.category === 'food' ? 'Food Photo' : store.category === 'fashion' ? 'Product Photos' : 'Property Photos'}
             </h2>
 
-            {/* Main image */}
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">Main Photo</label>
               <div className="border-2 border-dashed border-gray-200 rounded-2xl overflow-hidden hover:border-orange-300 transition-colors">
@@ -356,7 +352,6 @@ async function loadStore() {
               </div>
             </div>
 
-            {/* Gallery (fashion + real estate) */}
             {store.category !== 'food' && (
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">Gallery <span className="font-normal normal-case text-gray-400">(up to 8)</span></label>
@@ -387,7 +382,6 @@ async function loadStore() {
             )}
           </div>
 
-          {/* Availability */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center justify-between">
             <div>
               <p className="font-bold text-gray-900 text-sm">Available for order</p>
@@ -409,7 +403,6 @@ async function loadStore() {
             </label>
           </div>
 
-          {/* Submit */}
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={() => router.push('/vendor/dashboard')}
               className="px-6 py-3 rounded-xl font-bold text-sm text-gray-600 border border-gray-200 hover:bg-gray-50">

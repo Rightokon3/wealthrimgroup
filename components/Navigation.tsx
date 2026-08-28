@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
 import Image from 'next/image';
 import Logo from '@/public/image/Drovo-logo-2.png';
+import NotificationBell from '@/components/NotificationBell';
 
 export default function Navigation() {
   const pathname  = usePathname();
@@ -43,7 +44,7 @@ export default function Navigation() {
   }, []);
 
   const handleSignOut = async () => {
-    if (signingOut) return; // guard against double-clicks
+    if (signingOut) return;
     setSigningOut(true);
     try {
       await signOut();
@@ -92,7 +93,6 @@ export default function Navigation() {
               </Link>
             ))}
 
-            {/* Rider CTA — always visible to non-riders */}
             {!isRider && (
               <Link href={isLoggedIn && isRider ? '/rider/dashboard' : '/rider/signup'}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-green-700 bg-green-50 hover:bg-green-100 transition-all ml-1">
@@ -103,6 +103,9 @@ export default function Navigation() {
 
           {/* Right side */}
           <div className="flex items-center gap-2">
+            {/* Notification bell — any logged-in role */}
+            {!loading && isLoggedIn && user && <NotificationBell userId={user.id} />}
+
             {/* Cart */}
             {totalItems > 0 && (
               <Link href="/checkout"
@@ -142,7 +145,6 @@ export default function Navigation() {
                       transition={{ duration: .15 }}
                       className="absolute right-0 top-11 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50"
                     >
-                      {/* User info header */}
                       <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
                         <p className="font-bold text-gray-900 text-sm truncate">{profile?.full_name ?? 'User'}</p>
                         <p className="text-xs text-gray-400 truncate">{user?.email}</p>
@@ -159,7 +161,6 @@ export default function Navigation() {
                         </span>
                       </div>
 
-                      {/* Role-based links */}
                       <div className="p-1.5">
                         {isAdmin && (
                           <Link href="/admin" onClick={() => setUserMenuOpen(false)}
@@ -244,7 +245,6 @@ export default function Navigation() {
                   </Link>
                 ))}
 
-                {/* Rider CTA mobile */}
                 {!isRider && (
                   <Link href="/rider/signup" onClick={() => setMobileOpen(false)}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold text-green-700 bg-green-50 hover:bg-green-100 transition-all">

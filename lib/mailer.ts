@@ -32,3 +32,20 @@ export async function sendVerificationEmail(to: string, name: string, link: stri
     `,
   });
 }
+
+export async function sendVendorNotificationEmail(to: string, title: string, message: string) {
+  await mailer.sendMail({
+    from: `"Drovo" <${process.env.GMAIL_USER}>`,
+    to,
+    subject: title,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color:#111;">
+        <h2 style="margin-bottom:8px;">${title}</h2>
+        <p>${message}</p>
+        <p style="color:#999; font-size:12px; margin-top:24px;">
+          You're receiving this because you have a vendor account on Drovo.
+        </p>
+      </div>
+    `,
+  });
+}
