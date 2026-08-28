@@ -1,16 +1,27 @@
 import webpush from 'web-push';
 import { supabaseAdmin } from './supabaseAdmin';
 
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || 'mailto:support@drovo.com',
-  process.env.VAPID_PUBLIC_KEY!,
-  process.env.VAPID_PRIVATE_KEY!
-);
+// Lazy-initialized so setVapidDetails only runs at request time (inside a
+// function call), never at module load — calling it at the top level runs
+// during Next.js's build-time static analysis, before env vars are injected,
+// and crashes the build with "No key set vapidDetails.publicKey".
+let vapidConfigured = false;
+function ensureVapidConfigured() {
+  if (vapidConfigured) return;
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:support@drovo.com',
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
+    process.env.VAPID_PRIVATE_KEY!
+  );
+  vapidConfigured = true;
+}
 
 export async function sendPushToUser(
   userId: string,
   payload: { title: string; body: string; url?: string }
 ) {
+  ensureVapidConfigured();
+
   const { data: subs } = await supabaseAdmin
     .from('push_subscriptions')
     .select('*')
