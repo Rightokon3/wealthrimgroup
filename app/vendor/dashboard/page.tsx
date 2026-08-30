@@ -6,15 +6,16 @@ import {
   LayoutDashboard, Package, ShoppingBag, TrendingUp, Plus, Eye,
   Edit3, ToggleRight, ToggleLeft, Clock, CheckCircle, XCircle,
   Truck, Bell, LogOut, Star, ChevronRight, Banknote, Percent,
-  Store as StoreIcon
+  Store as StoreIcon, Settings as SettingsIcon
 } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Store, Product, Order, CATEGORY_META, OrderStatus } from '@/types';
-import NotificationBell from '@/components/vendor/NotificationBell';
+import NotificationBell from '@/components/NotificationBell';
+import StoreSettingsPanel from '@/components/vendor/StoreSettingsPanel';
 
-type Tab = 'overview'|'products'|'orders'|'earnings';
+type Tab = 'overview'|'products'|'orders'|'earnings'|'settings';
 
 const STATUS_STYLE: Record<OrderStatus,string> = {
   pending:    'bg-amber-100 text-amber-700 border-amber-200',
@@ -110,6 +111,7 @@ async function advanceOrder(id: string, next: OrderStatus) {
     { id:'products',  label:`${meta?.productLabel ?? 'Products'}s`, icon:<Package className="w-4 h-4"/>, badge:products.length },
     { id:'orders',    label:'Orders',    icon:<ShoppingBag className="w-4 h-4"/>, badge:pendingOrders.length||undefined },
     { id:'earnings',  label:'Earnings',  icon:<TrendingUp className="w-4 h-4"/> },
+    { id:'settings',  label:'Store Settings', icon:<SettingsIcon className="w-4 h-4"/> },
   ];
 
   return (
@@ -161,16 +163,17 @@ async function advanceOrder(id: string, next: OrderStatus) {
         {/* Topbar */}
         <div className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between sticky top-0 z-20">
           <div>
-            <h1 className="text-xl font-black text-gray-900 capitalize">{tab}</h1>
+            <h1 className="text-xl font-black text-gray-900 capitalize">{tab === 'settings' ? 'Store Settings' : tab}</h1>
             <p className="text-xs text-gray-400">
               {tab==='overview'&&'Your store at a glance'}
               {tab==='products'&&`${products.length} ${meta?.productLabel ?? 'product'}s listed`}
               {tab==='orders'&&`${pendingOrders.length} active orders`}
               {tab==='earnings'&&'Revenue & payout breakdown'}
+              {tab==='settings'&&'Edit your store profile or delete your store'}
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {user && <NotificationBell vendorId={user.id} />}
+            {user && <NotificationBell userId={user.id} />}
             {pendingOrders.length > 0 && (
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-bold">
                 <Bell className="w-3.5 h-3.5"/> {pendingOrders.length} pending
@@ -450,6 +453,16 @@ async function advanceOrder(id: string, next: OrderStatus) {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* ── SETTINGS ─────────────────────────────────────────────── */}
+          {tab==='settings' && store && user && (
+            <StoreSettingsPanel
+              store={store}
+              vendorId={user.id}
+              onUpdated={(updated) => setStore(updated)}
+              onDeleted={() => router.replace('/vendor/setup')}
+            />
           )}
         </div>
       </main>

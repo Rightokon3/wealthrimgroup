@@ -57,16 +57,28 @@ export default function RiderSignup() {
     }
 
     // 2. Insert into riders table
-    const { error: riderErr } = await supabase.from('riders').insert({
-      user_id:       authData.user.id,
-      full_name:     form.full_name,
-      phone:         form.phone,
-      city:          form.city.trim(),
-      vehicle_type:  form.vehicle_type,
-      vehicle_plate: form.vehicle_plate || null,
-    });
+const { error: riderErr } = await supabase.from('riders').insert({
+  user_id:       authData.user.id,
+  full_name:     form.full_name,
+  phone:         form.phone,
+  city:          form.city.trim(),
+  vehicle_type:  form.vehicle_type,
+  vehicle_plate: form.vehicle_plate || null,
+});
 
     if (riderErr) {
+      // Insert failed — don't leave a stranded auth account behind.
+      // Otherwise this email is permanently stuck: login fails (no riders
+      // row) and signup fails (auth user already exists).
+      fetch('/api/rider/cleanup-orphan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: authData.user.id }),
+      }).catch(() => {
+        // Best-effort — if this also fails, at least the person sees the
+        // real error below instead of a silent limbo state.
+      });
+
       setError(riderErr.message);
       setLoading(false); return;
     }
