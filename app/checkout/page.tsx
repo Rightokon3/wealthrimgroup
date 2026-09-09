@@ -6,7 +6,7 @@ import {
   MapPin, Phone, ShoppingCart, ChevronRight, CreditCard,
   Banknote, Smartphone, CheckCircle, AlertCircle,
   Shield, Calendar, Navigation, Plus, Minus, Trash2, X, Copy, Clock,
-  Bike, Car, Search, UserRound
+  Bike, Car, Search, UserRound, Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -28,15 +28,13 @@ interface Rider {
   total_deliveries: number;
 }
 
-const RIDER_ETA_MIN = 20; // fixed — no live GPS to compute a real ETA yet
+interface TransferAccount {
+  accountNumber: string;
+  accountName: string;
+  bankName: string;
+}
 
-// One fixed company account shown to every customer who pays by transfer.
-// Edit these three values to match your real bank details.
-const BANK_ACCOUNT = {
-  accountName:   'Wealthy Realm Int Ltd',
-  accountNumber: '3003841291',
-  bankName:      'Guaranty Trust Bank',
-};
+const RIDER_ETA_MIN = 20; // fixed — no live GPS to compute a real ETA yet
 
 function CheckoutInner() {
   const router  = useRouter();
@@ -61,8 +59,15 @@ function CheckoutInner() {
   const [selectedAddrId, setSelectedAddrId] = useState<string | null>(null);
 
   // Payment gateway state
-  const [showBankModal, setShowBankModal] = useState(false);
-  const [copiedField,   setCopiedField]   = useState<string | null>(null);
+  const [showBankModal,   setShowBankModal]   = useState(false);
+  const [copiedField,     setCopiedField]     = useState<string | null>(null);
+  const [transferAccount, setTransferAccount] = useState<TransferAccount | null>(null);
+  const [accountLoading,  setAccountLoading]  = useState(false);
+  const [accountError,    setAccountError]    = useState('');
+
+  // Live payment status for transfer orders — flips 'pending' -> 'paid'
+  // automatically the moment the Paystack webhook confirms the transfer.
+  const [orderPaymentStatus, setOrderPaymentStatus] = useState<'pending' | 'paid'>('pending');
 
   // Validation modal state
   const [showValidationModal, setShowValidationModal] = useState(false);
@@ -132,11 +137,44 @@ function CheckoutInner() {
     );
   }
 
+  // ── Fetch (or create) this customer's dedicated Paystack account ──
+  async function fetchTransferAccount() {
+    setAccountLoading(true);
+    setAccountError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Please log in again to continue.');
+
+      const res = await fetch('/api/paystack/dedicated-account', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Failed to load transfer account');
+
+      setTransferAccount({
+        accountNumber: data.accountNumber,
+        accountName:   data.accountName,
+        bankName:      data.bankName,
+      });
+    } catch (e: any) {
+      setAccountError(e.message ?? 'Failed to load transfer account');
+    } finally {
+      setAccountLoading(false);
+    }
+  }
+
   // ── Payment method change ────────────────────────────────────
   function handlePaymentChange(value: PaymentMethod) {
     setPayment(value);
     if (value === 'transfer') {
       setShowBankModal(true);
+      // Only hit the API if we don't already have (or aren't already
+      // fetching) an account for this session.
+      if (!transferAccount && !accountLoading) fetchTransferAccount();
     }
   }
 
@@ -276,16 +314,19 @@ function CheckoutInner() {
     }
   }
 
-  // ── Bank transfer — customer confirms they've sent the money,
-  //    order goes in as pending and lands on the normal success screen.
-  //    No auto-detection: staff/admin marks it paid once the transfer lands.
+  // ── Bank transfer — order goes in as pending against the customer's
+  //    dedicated Paystack account. The webhook (charge.success) flips
+  //    payment_status to 'paid' automatically once the transfer lands;
+  //    the success screen below picks that up via realtime.
   async function payWithTransfer() {
     if (!validateForm()) return;
+    if (!transferAccount) { setError('Still loading your transfer account — try again in a moment.'); return; }
     setPlacing(true); setError('');
     try {
       const order = await createOrder();
       clearCart();
       setStoreName(store?.name ?? '');
+      setOrderPaymentStatus('pending');
       setOrderId(order.id);
       setOrderNum(order.order_number);
     } catch (e: any) {
@@ -376,6 +417,38 @@ function CheckoutInner() {
     payWithTransfer();
   }
 
+  // ── Realtime: watch this order's payment_status once placed ────
+  // Flips the success screen from "pending" to "confirmed" the moment
+  // the Paystack webhook marks the order paid — no manual staff check.
+  useEffect(() => {
+    if (!orderId || payment !== 'transfer') return;
+
+    const channel = supabase
+      .channel(`order-payment-${orderId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${orderId}` },
+        (payload) => {
+          const newStatus = (payload.new as any)?.payment_status;
+          if (newStatus === 'paid') setOrderPaymentStatus('paid');
+        }
+      )
+      .subscribe();
+
+    // In case the webhook lands between order creation and subscription
+    // setup, do one immediate check too.
+    supabase
+      .from('orders')
+      .select('payment_status')
+      .eq('id', orderId)
+      .single()
+      .then(({ data }) => {
+        if (data?.payment_status === 'paid') setOrderPaymentStatus('paid');
+      });
+
+    return () => { supabase.removeChannel(channel); };
+  }, [orderId, payment]);
+
   // ── Loading ───────────────────────────────────────────────────
   if (al) return (
     <div className="min-h-screen pt-[64px] flex items-center justify-center">
@@ -397,8 +470,21 @@ function CheckoutInner() {
         <p className="text-gray-500 mb-5">
           {isRealEstate ? 'Your viewing request has been sent to' : 'Your order has been sent to'}{' '}
           <span className="font-bold text-gray-700">{storeName}</span>.
-          {payment === 'transfer' && ' We\'ll confirm your payment once it lands.'}
         </p>
+
+        {payment === 'transfer' && (
+          <div className={`flex items-center justify-center gap-2 mb-5 px-4 py-2.5 rounded-xl border text-sm font-bold ${
+            orderPaymentStatus === 'paid'
+              ? 'bg-green-50 border-green-200 text-green-700'
+              : 'bg-orange-50 border-orange-200 text-orange-600'
+          }`}>
+            {orderPaymentStatus === 'paid'
+              ? <><CheckCircle className="w-4 h-4" /> Payment confirmed</>
+              : <><Loader2 className="w-4 h-4 animate-spin" /> Waiting for your transfer to land — this updates automatically</>
+            }
+          </div>
+        )}
+
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm mb-6 text-left space-y-2">
           <div className="flex justify-between text-sm"><span className="text-gray-500">Order #</span><span className="font-mono font-black text-xs">{orderNum}</span></div>
           <div className="flex justify-between text-sm"><span className="text-gray-500">Subtotal</span><span className="font-bold">₦{subtotal.toLocaleString()}</span></div>
@@ -550,7 +636,8 @@ function CheckoutInner() {
         )}
       </AnimatePresence>
 
-      {/* Bank transfer details modal — plain, fixed account, no API call */}
+      {/* Bank transfer details modal — pulls a real, verifiable dedicated
+          account for this customer from Paystack instead of a shared account. */}
       <AnimatePresence>
         {showBankModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -565,42 +652,60 @@ function CheckoutInner() {
                 <Smartphone className="w-6 h-6 text-blue-600" />
               </div>
               <h3 className="font-black text-gray-900 text-lg mb-1">Bank Transfer Details</h3>
-              <p className="text-gray-500 text-sm mb-5">
-                Transfer exactly <span className="font-bold text-gray-900">₦{total.toLocaleString()}</span> to the account below, then confirm you've sent it.
-              </p>
 
-              <div className="space-y-3">
-                {[
-                  { label: 'Account Name',   value: BANK_ACCOUNT.accountName,   key: 'name' },
-                  { label: 'Account Number', value: BANK_ACCOUNT.accountNumber, key: 'number' },
-                  { label: 'Bank',           value: BANK_ACCOUNT.bankName,      key: 'bank' },
-                ].map(f => (
-                  <div key={f.key} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase tracking-wide font-bold">{f.label}</p>
-                      <p className="text-sm font-bold text-gray-900">{f.value}</p>
-                    </div>
-                    <button onClick={() => copyToClipboard(f.value, f.key)}
-                      className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-100 flex-shrink-0">
-                      {copiedField === f.key ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-gray-400" />}
-                    </button>
+              {accountLoading ? (
+                <div className="py-8 text-center">
+                  <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                  <p className="text-sm text-gray-400 font-semibold">Setting up your transfer account...</p>
+                </div>
+              ) : accountError ? (
+                <div>
+                  <p className="text-sm text-red-500 font-medium mb-4">{accountError}</p>
+                  <button onClick={fetchTransferAccount}
+                    className="w-full py-3 rounded-xl bg-orange-500 text-white font-bold text-sm hover:bg-orange-600">
+                    Try again
+                  </button>
+                </div>
+              ) : transferAccount ? (
+                <>
+                  <p className="text-gray-500 text-sm mb-5">
+                    Transfer exactly <span className="font-bold text-gray-900">₦{total.toLocaleString()}</span> to the account below — this account is unique to you, so we confirm your payment automatically once it lands.
+                  </p>
+
+                  <div className="space-y-3">
+                    {[
+                      { label: 'Account Name',   value: transferAccount.accountName,   key: 'name' },
+                      { label: 'Account Number', value: transferAccount.accountNumber, key: 'number' },
+                      { label: 'Bank',           value: transferAccount.bankName,      key: 'bank' },
+                    ].map(f => (
+                      <div key={f.key} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase tracking-wide font-bold">{f.label}</p>
+                          <p className="text-sm font-bold text-gray-900">{f.value}</p>
+                        </div>
+                        <button onClick={() => copyToClipboard(f.value, f.key)}
+                          className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-100 flex-shrink-0">
+                          {copiedField === f.key ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-gray-400" />}
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              <button
-                onClick={confirmTransferSent}
-                disabled={placing}
-                className="w-full mt-5 py-3.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-black hover:from-orange-600 hover:to-red-700 disabled:opacity-60 flex items-center justify-center gap-2">
-                {placing
-                  ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Placing...</>
-                  : "I've Sent the Transfer — Place Order"
-                }
-              </button>
-              <button onClick={() => setShowBankModal(false)}
-                className="w-full mt-2 py-2.5 text-gray-400 font-semibold text-sm hover:text-gray-600">
-                I'll pay later
-              </button>
+                  <button
+                    onClick={confirmTransferSent}
+                    disabled={placing}
+                    className="w-full mt-5 py-3.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-black hover:from-orange-600 hover:to-red-700 disabled:opacity-60 flex items-center justify-center gap-2">
+                    {placing
+                      ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Placing...</>
+                      : "I've Sent the Transfer — Place Order"
+                    }
+                  </button>
+                  <button onClick={() => setShowBankModal(false)}
+                    className="w-full mt-2 py-2.5 text-gray-400 font-semibold text-sm hover:text-gray-600">
+                    I'll pay later
+                  </button>
+                </>
+              ) : null}
             </motion.div>
           </div>
         )}
@@ -797,7 +902,7 @@ function CheckoutInner() {
                 <div className="space-y-3">
                   {[
                     { value: 'cash_on_delivery', label: 'Cash on Delivery',    desc: 'Pay when your order arrives', icon: <Banknote className="w-5 h-5 text-green-600" /> },
-                    { value: 'transfer',         label: 'Bank Transfer',        desc: 'Pay to our account, we confirm manually', icon: <Smartphone className="w-5 h-5 text-blue-600" /> },
+                    { value: 'transfer',         label: 'Bank Transfer',        desc: 'Pay to your unique account — confirmed automatically', icon: <Smartphone className="w-5 h-5 text-blue-600" /> },
                     { value: 'card',             label: 'Debit / Credit Card',  desc: 'Pay securely via Paystack',  icon: <CreditCard className="w-5 h-5 text-purple-600" /> },
                   ].map(opt => (
                     <label key={opt.value}
@@ -902,7 +1007,7 @@ function CheckoutInner() {
                   }
                 </button>
                 <div className="flex items-center justify-center gap-1 mt-3 text-xs text-gray-400">
-                  <Shield className="w-3 h-3" /> Secured by Drovo{payment === 'card' && ' & Paystack'}
+                  <Shield className="w-3 h-3" /> Secured by Drovo{payment === 'card' && ' & Paystack'}{payment === 'transfer' && ' & Paystack'}
                 </div>
               </div>
             </div>

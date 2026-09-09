@@ -34,8 +34,8 @@ const STATS = [
 
 const HERO_IMAGES = [
   '/image/image1.png',
+  '/image/image 4.png',
   '/image/image2.png',
-  '/image/image 3.png',
 ];
 
 function StoreCard({ store }: { store: Store }) {
