@@ -90,7 +90,16 @@ export default function NotificationBell({ userId }: { userId: string }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl border border-gray-100 shadow-xl z-30 overflow-hidden">
+        // Mobile (< sm): a fixed, viewport-clamped sheet pinned just under the
+        // header with side margins — a fixed 320px dropdown would overflow a
+        // narrow screen and end up looking detached from the bell entirely.
+        // sm and up: reverts to the original anchored dropdown under the bell.
+        <div
+          className="fixed inset-x-3 top-16 z-30
+                     sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2
+                     w-auto sm:w-80
+                     bg-white rounded-2xl border border-gray-100 shadow-xl overflow-hidden"
+        >
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <span className="font-black text-sm text-gray-900">Notifications</span>
             {unread > 0 && (

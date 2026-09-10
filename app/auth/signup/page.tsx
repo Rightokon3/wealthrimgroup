@@ -69,7 +69,10 @@ function SignupInner() {
     setSuccess(true);
   };
 
-  const ic = 'w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none bg-gray-50 focus:bg-white';
+  // NOTE: added `text-gray-900 placeholder-gray-400` — this was missing,
+  // which let inputs inherit a light/white text color from global styles
+  // and made typed text invisible against the gray-50/white backgrounds.
+  const ic = 'w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none bg-gray-50 focus:bg-white';
 
   if (success) return (
     <div className="min-h-screen pt-[64px] bg-gradient-to-br from-orange-50 via-white to-amber-50 flex items-center justify-center px-4">

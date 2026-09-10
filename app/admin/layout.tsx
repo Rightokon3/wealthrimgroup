@@ -46,21 +46,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [al, isLoggedIn, user]);
 
   if (!checked) return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-950">
+    <div className="min-h-screen pt-[64px] flex items-center justify-center bg-gray-950">
       <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    // pt-[64px] pushes the whole admin shell below the site-wide fixed
+    // Navigation bar (h-16, z-50). Without this, the mobile topbar below
+    // (sticky top-0, z-30) renders underneath that nav bar and its
+    // hamburger button becomes unreachable.
+    <div className="min-h-screen pt-[64px] bg-gray-950 flex">
       {/* Mobile overlay */}
       {sideOpen && (
-        <div className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={() => setSideOpen(false)} />
+        <div className="fixed inset-0 top-[64px] bg-black/60 z-40 lg:hidden" onClick={() => setSideOpen(false)} />
       )}
 
       {/* Sidebar */}
       <aside className={`
-        fixed lg:sticky top-0 left-0 h-screen w-60 bg-gray-900 border-r border-gray-800
+        fixed lg:sticky top-[64px] left-0 h-[calc(100vh-64px)] w-60 bg-gray-900 border-r border-gray-800
         flex flex-col z-50 transition-transform duration-300
         ${sideOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
@@ -74,7 +78,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <div className="text-xs text-orange-400 font-bold">Admin Panel</div>
             </div>
           </div>
-          {user && <NotificationBell userId={user.id} />}
+          <button
+            onClick={() => setSideOpen(false)}
+            className="lg:hidden w-8 h-8 flex-shrink-0 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+            aria-label="Close menu"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
