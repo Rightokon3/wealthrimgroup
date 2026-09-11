@@ -7,7 +7,7 @@ import Image from 'next/image';
 const FOOTER_LINKS = {
   explore: [
     { label: '🍛 Food & Delivery',   href: '/categories/food' },
-    { label: '🏠 Real Estate',        href: '/categories/real-estate' },
+    { label: '🏠 Real Estate',        href: '/real-estate' },
     { label: '👗 Fashion & Fabric',   href: '/categories/fashion' },
   ],
   vendors: [

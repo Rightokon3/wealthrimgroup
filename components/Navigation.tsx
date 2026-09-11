@@ -84,7 +84,7 @@ export default function Navigation() {
           <div className="hidden md:flex items-center gap-1">
             {[
               { href: '/categories/food',        label: '🍛 Food' },
-              { href: '/categories/real-estate', label: '🏠 Real Estate' },
+              { href: '/real-estate', label: '🏠 Real Estate' },
               { href: '/categories/fashion',     label: '👗 Fashion' },
             ].map(item => (
               <Link key={item.href} href={item.href}
