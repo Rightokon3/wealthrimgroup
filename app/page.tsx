@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
@@ -168,7 +168,9 @@ export default function HomePage() {
             </p>
 
             {/* Search bar */}
-            <SearchBar className="max-w-2xl w-full mx-auto" />
+            <Suspense fallback={null}>
+              <SearchBar className="max-w-2xl w-full mx-auto" />
+            </Suspense>
           </motion.div>
 
           {/* Hero dot nav */}
