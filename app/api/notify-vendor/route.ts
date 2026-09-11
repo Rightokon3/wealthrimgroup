@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 import { sendOrderNotificationEmail } from '@/lib/email';
 import { sendVendorNotificationEmail } from '@/lib/mailer';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
@@ -58,23 +56,16 @@ export async function POST(req: NextRequest) {
 }
 
 async function notifyNewOrder(orderId: string) {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: (cookiesToSet) => {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
-  const { data: order, error: orderErr } = await supabase
+  // Use the admin client (service role — bypasses RLS) to read the order
+  // plus its store/vendor/customer details. This is a backend notification
+  // job, not an action taken on behalf of the calling customer, and the
+  // previous cookie-scoped client couldn't complete this query: embedding
+  // profiles:vendor_id(...) tries to read another user's profile row,
+  // which typical "select own profile only" RLS policies block. Supabase
+  // fails the *whole* select when an embedded join is denied, so this
+  // function was throwing on every single new order and failing silently
+  // (the checkout page only console.warns on failure).
+  const { data: order, error: orderErr } = await supabaseAdmin
     .from('orders')
     .select(`
       *,

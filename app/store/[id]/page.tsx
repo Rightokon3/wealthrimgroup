@@ -93,6 +93,19 @@ function StoreInner() {
 
   const getQty = (pid: string) => items.find(i=>i.product.id===pid)?.quantity??0;
 
+  // Opens the fashion size/color picker modal. When a product has only
+  // one size and/or only one color, there's nothing for the customer to
+  // meaningfully choose — auto-select it so "Add to Order" works on the
+  // first click instead of silently requiring a click on a non-choice
+  // option first (previously: leaving size/color unselected made
+  // handleAdd() just re-open this same modal with no visible change,
+  // which looked like the button did nothing).
+  function openSizeColorPicker(product: Product) {
+    setSelected(product);
+    setPickSize(product.sizes.length === 1 ? product.sizes[0] : '');
+    setPickColor(product.colors.length === 1 ? product.colors[0] : '');
+  }
+
   const handleAdd = (product: Product, size?: string, color?: string) => {
     if (cartStore && cartStore.id !== id && totalItems > 0) {
       setPendingAdd({ product, size, color });
@@ -103,7 +116,7 @@ function StoreInner() {
     const storeRef = toCartStoreRef(store);
     // Fashion needs size/color selection
     if (store.category==='fashion' && (product.sizes.length>0||product.colors.length>0) && !size && !color) {
-      setSelected(product); setPickSize(''); setPickColor(''); return;
+      openSizeColorPicker(product); return;
     }
     addItem(product, storeRef, size, color);
     setSelected(null);
@@ -124,7 +137,7 @@ function StoreInner() {
       const storeRef = toCartStoreRef(store);
       const { product, size, color } = pendingAdd;
       if (store.category==='fashion' && (product.sizes.length>0||product.colors.length>0) && !size && !color) {
-        setSelected(product); setPickSize(''); setPickColor('');
+        openSizeColorPicker(product);
       } else {
         addItem(product, storeRef, size, color);
       }
@@ -226,8 +239,10 @@ function StoreInner() {
                   </div>
                 </div>
               )}
-              <button onClick={()=>handleAdd(selected,pickSize||undefined,pickColor||undefined)}
-                className="w-full py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-black hover:from-orange-600 hover:to-red-700">
+              <button
+                onClick={()=>handleAdd(selected,pickSize||undefined,pickColor||undefined)}
+                disabled={(selected.sizes.length>0 && !pickSize) || (selected.colors.length>0 && !pickColor)}
+                className="w-full py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-black hover:from-orange-600 hover:to-red-700 disabled:opacity-50 disabled:cursor-not-allowed">
                 Add to Order
               </button>
             </motion.div>
