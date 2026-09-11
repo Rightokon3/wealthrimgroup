@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { MailCheck, Loader2 } from 'lucide-react';
@@ -11,10 +11,19 @@ function VerifyPendingInner() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setInterval(() => setCooldown(c => c - 1), 1000);
+    return () => clearInterval(t);
+  }, [cooldown]);
 
   async function resend() {
+    if (cooldown > 0) return;
     setSending(true);
     setError('');
+    setSent(false);
     try {
       const res = await fetch('/api/rider/send-verification', {
         method: 'POST',
@@ -24,6 +33,7 @@ function VerifyPendingInner() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setSent(true);
+      setCooldown(60); // block resend for 60s so we can't fire two overlapping sends
     } catch (e: any) {
       setError(e.message || 'Failed to resend email.');
     } finally {
@@ -59,10 +69,14 @@ function VerifyPendingInner() {
 
         <button
           onClick={resend}
-          disabled={sending || !userId}
+          disabled={sending || !userId || cooldown > 0}
           className="w-full mt-6 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black rounded-xl flex items-center justify-center gap-2 hover:from-green-600 hover:to-emerald-700 transition-all disabled:opacity-60"
         >
-          {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Resend email'}
+          {sending
+            ? <Loader2 className="w-4 h-4 animate-spin" />
+            : cooldown > 0
+              ? `Resend in ${cooldown}s`
+              : 'Resend email'}
         </button>
       </motion.div>
     </div>

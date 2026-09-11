@@ -14,6 +14,7 @@ import { useCart } from '@/contexts/CartContext';
 import { Business } from '@/types';
 import { BusinessCategory } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import SearchBar from '@/components/SearchBar';
 
 
 
@@ -167,30 +168,7 @@ export default function HomePage() {
             </p>
 
             {/* Search bar */}
-            <div className="flex items-center gap-3 bg-white rounded-2xl p-2 shadow-2xl max-w-2xl w-full mx-auto">
-              <div className="flex items-center gap-2 flex-1 px-3">
-                <Search className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search for food, fashion, properties..."
-                  className="w-full text-sm outline-none text-gray-700 placeholder:text-gray-400"
-                />
-              </div>
-              <div className="hidden sm:flex items-center gap-1 px-3 border-l border-gray-200">
-                <MapPin className="w-4 h-4 text-orange-500" />
-                <select className="text-sm text-gray-600 outline-none bg-transparent">
-                  {CITIES.map(c => <option key={c}>{c}</option>)}
-                </select>
-              </div>
-              <Link
-                href={`/businesses?search=${search}`}
-                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm hover:from-orange-600 hover:to-red-700 transition-all shadow-lg shadow-orange-300/50 whitespace-nowrap"
-              >
-                Search <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
+            <SearchBar className="max-w-2xl w-full mx-auto" />
           </motion.div>
 
           {/* Hero dot nav */}

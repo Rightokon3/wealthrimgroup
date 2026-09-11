@@ -57,14 +57,14 @@ export default function RiderSignup() {
     }
 
     // 2. Insert into riders table
-const { error: riderErr } = await supabase.from('riders').insert({
-  user_id:       authData.user.id,
-  full_name:     form.full_name,
-  phone:         form.phone,
-  city:          form.city.trim(),
-  vehicle_type:  form.vehicle_type,
-  vehicle_plate: form.vehicle_plate || null,
-});
+    const { error: riderErr } = await supabase.from('riders').insert({
+      user_id:       authData.user.id,
+      full_name:     form.full_name,
+      phone:         form.phone,
+      city:          form.city.trim(),
+      vehicle_type:  form.vehicle_type,
+      vehicle_plate: form.vehicle_plate || null,
+    });
 
     if (riderErr) {
       // Insert failed — don't leave a stranded auth account behind.
@@ -83,18 +83,24 @@ const { error: riderErr } = await supabase.from('riders').insert({
       setLoading(false); return;
     }
 
-    // 3. Trigger verification email — fire and forget, don't block navigation
-    fetch('/api/rider/send-verification', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user_id: authData.user.id,
-        email: form.email,
-        full_name: form.full_name,
-      }),
-    }).catch(() => {
+    // 3. Trigger verification email — await it so we know it genuinely
+    // sent before we send the user to the "check your email" page.
+    try {
+      const res = await fetch('/api/rider/send-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: authData.user.id,
+          email: form.email,
+          full_name: form.full_name,
+        }),
+      });
+      if (!res.ok) {
+        console.error('Verification email failed to send on signup.');
+      }
+    } catch {
       // Non-fatal — rider can resend from the verify-pending page.
-    });
+    }
 
     router.replace(
       `/rider/verify-pending?email=${encodeURIComponent(form.email)}&uid=${authData.user.id}`
