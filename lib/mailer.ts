@@ -49,3 +49,25 @@ export async function sendVendorNotificationEmail(to: string, title: string, mes
     `,
   });
 }
+export async function sendPasswordResetEmail(to: string, name: string, link: string) {
+  await mailer.sendMail({
+    from: `"Rider App" <${process.env.GMAIL_USER}>`,
+    to,
+    subject: 'Reset your password',
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color:#111;">
+        <h2 style="margin-bottom:4px;">Hi ${name},</h2>
+        <p>We received a request to reset your password. Click the button below to choose a new one.</p>
+        <p style="margin: 24px 0;">
+          <a href="${link}"
+             style="background: linear-gradient(to right, #22c55e, #059669); color: #fff;
+                    padding: 12px 24px; border-radius: 12px; text-decoration: none; font-weight: 700; display:inline-block;">
+            Reset Password
+          </a>
+        </p>
+        <p style="color:#666; font-size:13px;">This link expires in 24 hours. If you didn't request this, you can safely ignore this email.</p>
+        <p style="color:#999; font-size:12px; word-break:break-all;">Or paste this into your browser: ${link}</p>
+      </div>
+    `,
+  });
+}

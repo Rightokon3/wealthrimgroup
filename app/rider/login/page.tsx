@@ -108,7 +108,11 @@ export default function RiderLogin() {
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sign In'}
           </button>
         </div>
-
+        <div className="text-right mt-1.5">
+  <Link href="/rider/forgot-password" className="text-xs text-green-600 font-bold hover:underline">
+    Forgot password?
+  </Link>
+</div>
         <p className="text-center text-sm text-gray-400 mt-6">
           Not a rider yet?{' '}
           <Link href="/rider/signup" className="text-green-600 font-bold hover:underline">Apply now</Link>

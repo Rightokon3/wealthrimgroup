@@ -57,15 +57,15 @@ export default function RiderSignup() {
     }
 
     // 2. Insert into riders table
-    const { error: riderErr } = await supabase.from('riders').insert({
-      user_id:       authData.user.id,
-      full_name:     form.full_name,
-      phone:         form.phone,
-      city:          form.city.trim(),
-      vehicle_type:  form.vehicle_type,
-      vehicle_plate: form.vehicle_plate || null,
-    });
-
+const { error: riderErr } = await supabase.from('riders').insert({
+  user_id:       authData.user.id,
+  full_name:     form.full_name,
+  email:         form.email.trim().toLowerCase(),
+  phone:         form.phone,
+  city:          form.city.trim(),
+  vehicle_type:  form.vehicle_type,
+  vehicle_plate: form.vehicle_plate || null,
+});
     if (riderErr) {
       // Insert failed — don't leave a stranded auth account behind.
       // Otherwise this email is permanently stuck: login fails (no riders
