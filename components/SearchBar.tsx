@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Search } from 'lucide-react';
 
@@ -8,7 +8,7 @@ interface SearchBarProps {
   placeholder?: string;
 }
 
-export default function SearchBar({
+function SearchBarInner({
   className = '',
   placeholder = 'Search for food, fashion, properties...',
 }: SearchBarProps) {
@@ -54,5 +54,24 @@ export default function SearchBar({
         Search
       </button>
     </form>
+  );
+}
+
+function SearchBarFallback({ className = '' }: { className?: string }) {
+  return (
+    <div className={`flex items-center gap-2 bg-white rounded-2xl p-2 shadow-2xl ${className}`}>
+      <div className="flex items-center gap-2 flex-1 px-3 py-2.5">
+        <Search className="w-5 h-5 text-gray-300 flex-shrink-0" />
+        <span className="text-sm text-gray-300">Loading search…</span>
+      </div>
+    </div>
+  );
+}
+
+export default function SearchBar(props: SearchBarProps) {
+  return (
+    <Suspense fallback={<SearchBarFallback className={props.className} />}>
+      <SearchBarInner {...props} />
+    </Suspense>
   );
 }
