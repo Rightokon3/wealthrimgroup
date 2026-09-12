@@ -13,11 +13,10 @@ export default function RiderLogin() {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
-  const [unverifiedUserId, setUnverifiedUserId] = useState<string | null>(null);
 
   async function handleLogin() {
     if (!email || !password) { setError('Enter your email and password.'); return; }
-    setLoading(true); setError(''); setUnverifiedUserId(null);
+    setLoading(true); setError('');
 
     const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password });
     if (authErr || !data.user) {
@@ -36,12 +35,16 @@ export default function RiderLogin() {
       setError('No rider account found for this email.');
       setLoading(false); return;
     }
+
     if (!rider.email_verified) {
-      await supabase.auth.signOut();
-      setUnverifiedUserId(data.user.id);
-      setError('Your email hasn\'t been verified yet.');
-      setLoading(false); return;
+      // Don't leave them on the login page with a link to click — take
+      // them straight to the verify-pending page so resend is one tap away.
+      router.replace(
+        `/rider/verify-pending?email=${encodeURIComponent(email)}&uid=${data.user.id}`
+      );
+      return;
     }
+
     if (!rider.is_active) {
       await supabase.auth.signOut();
       setError('Your account has been deactivated. Contact support.');
@@ -69,24 +72,13 @@ export default function RiderLogin() {
           {error && (
             <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm font-medium">
               {error}
-              {unverifiedUserId && (
-                <>
-                  {' '}
-                  <Link
-                    href={`/rider/verify-pending?email=${encodeURIComponent(email)}&uid=${unverifiedUserId}`}
-                    className="underline font-bold hover:text-red-700"
-                  >
-                    Verify your email
-                  </Link>
-                </>
-              )}
             </div>
           )}
 
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Email</label>
             <input
-              type="email" value={email} onChange={e => { setEmail(e.target.value); setError(''); setUnverifiedUserId(null); }}
+              type="email" value={email} onChange={e => { setEmail(e.target.value); setError(''); }}
               placeholder="you@email.com"
               onKeyDown={e => e.key === 'Enter' && handleLogin()}
               className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium"
@@ -97,7 +89,7 @@ export default function RiderLogin() {
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Password</label>
             <div className="relative">
               <input
-                type={showPw ? 'text' : 'password'} value={password} onChange={e => { setPassword(e.target.value); setError(''); setUnverifiedUserId(null); }}
+                type={showPw ? 'text' : 'password'} value={password} onChange={e => { setPassword(e.target.value); setError(''); }}
                 placeholder="Your password"
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium pr-11"

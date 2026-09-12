@@ -23,14 +23,23 @@ export async function middleware(req: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Only hard-guard /account at the edge. Vendor routes (setup, dashboard,
-  // products) are guarded client-side in the page components themselves —
-  // this avoids the redirect-loop / false-negative issues that come from
-  // doing role lookups inside middleware before the session is fully synced.
-  if (pathname.startsWith('/account') && !user) {
-    const url = new URL('/auth/login', req.url);
-    url.searchParams.set('next', pathname);
-    return NextResponse.redirect(url);
+  // Hard-guard at the edge: no session at all → bounce before the page
+  // even renders. Role/verification checks (email_verified, is_active)
+  // still happen client-side in the page components — those need a DB
+  // lookup beyond the auth session, and doing that here risks redirect
+  // loops before the session is fully synced. This layer only answers
+  // "is anyone logged in at all".
+  if (!user) {
+    if (pathname.startsWith('/account')) {
+      const url = new URL('/auth/login', req.url);
+      url.searchParams.set('next', pathname);
+      return NextResponse.redirect(url);
+    }
+    if (pathname.startsWith('/rider/dashboard') || pathname.startsWith('/rider/orders')) {
+      const url = new URL('/rider/login', req.url);
+      url.searchParams.set('next', pathname);
+      return NextResponse.redirect(url);
+    }
   }
 
   return res;

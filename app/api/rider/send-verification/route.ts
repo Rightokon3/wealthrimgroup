@@ -12,13 +12,15 @@ export async function POST(req: NextRequest) {
 
   const { rawToken, tokenHash, expiresAt } = generateVerificationToken();
 
+  // Insert a NEW token row instead of overwriting — this means a resend
+  // no longer invalidates an email that's still in flight.
   const { error } = await supabaseAdmin
-    .from('riders')
-    .update({
-      verification_token_hash: tokenHash,
-      verification_token_expires: expiresAt.toISOString(),
-    })
-    .eq('user_id', user_id);
+    .from('rider_verification_tokens')
+    .insert({
+      user_id,
+      token_hash: tokenHash,
+      expires_at: expiresAt.toISOString(),
+    });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -26,8 +28,6 @@ export async function POST(req: NextRequest) {
 
   const link = `${process.env.NEXT_PUBLIC_BASE_URL}/rider/verify-email?token=${rawToken}`;
 
-  // Await this now — the response only comes back once the email has
-  // genuinely been handed off, so the client can trust "success: true".
   try {
     await sendVerificationEmail(email, full_name || 'Rider', link);
   } catch (err) {

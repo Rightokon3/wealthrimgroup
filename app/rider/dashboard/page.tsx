@@ -64,6 +64,24 @@ export default function RiderDashboard() {
       .maybeSingle();
 
     if (!r) { router.replace('/rider/signup'); return; }
+
+    if (!r.email_verified) {
+      // Unverified rider somehow has a session — send them to resend
+      // instead of letting them see the dashboard.
+      router.replace(
+        `/rider/verify-pending?email=${encodeURIComponent(user!.email ?? '')}&uid=${user!.id}`
+      );
+      return;
+    }
+
+    if (!r.is_active) {
+      // Deactivated — kick them out entirely rather than leaving a stale
+      // session sitting around.
+      await signOut();
+      router.replace('/rider/login');
+      return;
+    }
+
     setRider(r);
 
     await fetchOrders(r.id);
