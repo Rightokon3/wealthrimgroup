@@ -14,7 +14,7 @@ const FOOTER_LINKS = {
     { label: 'Become a Vendor',       href: '/auth/signup' },
     { label: 'Vendor Dashboard',      href: '/vendor/dashboard' },
     { label: 'Add a Product',         href: '/vendor/products/new' },
-    { label: 'Vendor Setup Guide',    href: '/vendor/setup' },
+    { label: 'Vendor Setup Guide',    href: '/vendor/guide' },
   ],
   riders: [
     { label: 'Become a Rider',        href: '/rider/signup' },
