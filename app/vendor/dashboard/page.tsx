@@ -42,25 +42,42 @@ export default function VendorDashboard() {
   const [loading,  setLoading]  = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Supabase sets email_confirmed_at only after the user clicks the email link.
+  const isVerified = !!user?.email_confirmed_at;
+
+  // 1) Auth + verification gate
   useEffect(() => {
     if (al) return;
     if (!isLoggedIn) { router.replace('/auth/login?next=/vendor/dashboard'); return; }
-  }, [al, isLoggedIn, router]);
+    if (user && !user.email_confirmed_at) {
+      router.replace('/auth/verify-email?next=/vendor/dashboard');
+    }
+  }, [al, isLoggedIn, user, router]);
 
+  // 2) Only load data for verified vendors
   useEffect(() => {
-    if (user && isVendor) fetchAll();
-    else if (user && profile && !isVendor) router.replace('/');
-  }, [user, isVendor, profile]);
+    if (!user || !profile) return;
+    if (!isVerified) return;
+    if (!isVendor) { router.replace('/'); return; }
+    fetchAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isVendor, profile, isVerified]);
 
   // Close the mobile drawer whenever the tab changes.
   useEffect(() => {
     setSidebarOpen(false);
   }, [tab]);
 
-async function fetchAll() {
+  async function fetchAll() {
     setLoading(true);
-    const { data: s, error } = await supabase.from('stores').select('*').eq('vendor_id', user!.id).order('created_at', { ascending: true }).limit(1).maybeSingle();
-   
+    const { data: s } = await supabase
+      .from('stores')
+      .select('*')
+      .eq('vendor_id', user!.id)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
     if (!s) { router.replace('/vendor/setup'); return; }
     setStore(s);
     const [pr, or] = await Promise.all([
@@ -77,22 +94,26 @@ async function fetchAll() {
     setProducts(p => p.map(x => x.id === id ? { ...x, is_available: !cur } : x));
   }
 
-async function advanceOrder(id: string, next: OrderStatus) {
-  await supabase.from('orders').update({ status: next }).eq('id', id);
-  setOrders(o => o.map(x => x.id === id ? { ...x, status: next } : x));
+  async function advanceOrder(id: string, next: OrderStatus) {
+    await supabase.from('orders').update({ status: next }).eq('id', id);
+    setOrders(o => o.map(x => x.id === id ? { ...x, status: next } : x));
 
-  fetch('/api/notify-vendor', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'order_status', orderId: id, status: next }),
-  }).catch(err => console.warn('Customer status notification failed:', err));
-}
+    fetch('/api/notify-vendor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'order_status', orderId: id, status: next }),
+    }).catch(err => console.warn('Customer status notification failed:', err));
+  }
 
-  if (al || (isLoggedIn && !profile)) return (
+  // Spinner while auth loads, profile loads, or an unverified user is being redirected.
+  if (al || (isLoggedIn && !profile) || (isLoggedIn && !isVerified)) return (
     <div className="min-h-screen pt-[64px] flex items-center justify-center">
       <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
     </div>
   );
+
+  // Not logged in: the effect above is redirecting, render nothing meanwhile.
+  if (!isLoggedIn) return null;
 
   if (!store && !loading) return (
     <div className="min-h-screen pt-[64px] flex items-center justify-center bg-orange-50 px-4">
@@ -241,7 +262,7 @@ async function advanceOrder(id: string, next: OrderStatus) {
                 {[
                   { label:'Total Revenue',   value:`₦${totalRevenue.toLocaleString()}`,        icon:<Banknote className="w-5 h-5"/>,  color:'from-orange-500 to-red-500' },
                   { label:'Platform Fee (10%)',value:`₦${totalPlatformFee.toLocaleString()}`,   icon:<Percent className="w-5 h-5"/>,  color:'from-gray-500 to-gray-600' },
-                  { label:'Your Earnings',   value:`₦${totalVendorPayout.toLocaleString()}`,    icon:<TrendingUp className="w-5 h-5"/>,'color':'from-green-500 to-emerald-500' },
+                  { label:'Your Earnings',   value:`₦${totalVendorPayout.toLocaleString()}`,    icon:<TrendingUp className="w-5 h-5"/>, color:'from-green-500 to-emerald-500' },
                   { label:'Active Orders',   value:pendingOrders.length,                         icon:<ShoppingBag className="w-5 h-5"/>, color:'from-blue-500 to-indigo-500' },
                 ].map((s,i) => (
                   <motion.div key={s.label} initial={{opacity:0,y:15}} animate={{opacity:1,y:0}} transition={{delay:i*.07}}
@@ -433,7 +454,7 @@ async function advanceOrder(id: string, next: OrderStatus) {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                 {[
                   { label:'Gross Revenue', value:`₦${totalRevenue.toLocaleString()}`, sub:'All delivered orders', color:'text-gray-900' },
-                  { label:'Platform Fee (10%)', value:`− ₦${totalPlatformFee.toLocaleString()}`, sub:'AfriCart commission', color:'text-red-600' },
+                  { label:'Platform Fee (10%)', value:`− ₦${totalPlatformFee.toLocaleString()}`, sub:'Drovo commission', color:'text-red-600' },
                   { label:'Net Payout (90%)', value:`₦${totalVendorPayout.toLocaleString()}`, sub:'What you receive', color:'text-green-600' },
                 ].map(s=>(
                   <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -453,7 +474,7 @@ async function advanceOrder(id: string, next: OrderStatus) {
                     <span className="font-bold text-gray-900">₦10,000 (example)</span>
                   </div>
                   <div className="flex items-center justify-between py-2 border-b border-gray-100 text-sm gap-3">
-                    <span className="text-gray-600">AfriCart platform fee</span>
+                    <span className="text-gray-600">Drovo platform fee</span>
                     <span className="font-bold text-red-600">− ₦1,000 (10%)</span>
                   </div>
                   <div className="flex items-center justify-between py-2 text-sm gap-3">
