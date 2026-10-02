@@ -1,12 +1,13 @@
 'use client';
-import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MapPin, Phone, ShoppingCart, ChevronRight, CreditCard,
   Banknote, Smartphone, CheckCircle, AlertCircle,
   Shield, Calendar, Navigation, Plus, Minus, Trash2, X, Copy, Clock,
-  Bike, Car, Search, UserRound, Loader2
+  Bike, Car, Search, UserRound, Loader2, Home, Briefcase
 } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -15,10 +16,22 @@ import { useCart } from '@/contexts/CartContext';
 import { calculateDeliveryFee } from '@/lib/deliveryFee';
 import { loadPaystackScript } from '@/lib/paystack';
 import { PaymentMethod, CATEGORY_META } from '@/types';
+import type { PickedLocation } from '@/components/vendor/LocationPicker';
+
+// Leaflet needs the browser, so it must not render on the server.
+const LocationPicker = dynamic(() => import('@/components/vendor/LocationPicker'), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-2xl border border-gray-200 bg-gray-50 flex items-center justify-center" style={{ height: 320 }}>
+      <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  ),
+});
 
 interface SavedAddress {
   id: string; label: string; address: string;
   city: string; state: string | null; is_default: boolean;
+  latitude?: number | null; longitude?: number | null;
 }
 
 interface Rider {
@@ -53,10 +66,17 @@ function CheckoutInner() {
   const [orderNum,       setOrderNum]       = useState('');
   const [storeName,      setStoreName]      = useState('');
   const [error,          setError]          = useState('');
-  const [locating,       setLocating]       = useState(false);
   const [customerCoords, setCustomerCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Saved addresses + map picker state
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [addrLoading,    setAddrLoading]    = useState(true);
   const [selectedAddrId, setSelectedAddrId] = useState<string | null>(null);
+  const [showNewAddr,    setShowNewAddr]    = useState(false);
+  const [locateSignal,   setLocateSignal]   = useState(0);
+  const [addrNotice,     setAddrNotice]     = useState('');
+  const [saveForLater,   setSaveForLater]   = useState(true);
+  const [newLabel,       setNewLabel]       = useState('Home');
 
   // Payment gateway state
   const [showBankModal,   setShowBankModal]   = useState(false);
@@ -80,6 +100,14 @@ function CheckoutInner() {
   const [riderSearchErr, setRiderSearchErr] = useState('');
   const [assignedRider,  setAssignedRider]  = useState<Rider | null>(null);
 
+  // The rider is also kept in a ref because pickRider() starts the payment
+  // flow in the same tick, before React has re-rendered with the new state.
+  const riderRef = useRef<Rider | null>(null);
+  function setRider(r: Rider | null) {
+    riderRef.current = r;
+    setAssignedRider(r);
+  }
+
   // ── Auth guard ────────────────────────────────────────────────
   useEffect(() => {
     if (!al && !isLoggedIn) router.replace('/auth/login?next=/checkout');
@@ -94,23 +122,68 @@ function CheckoutInner() {
   // ── Load saved addresses, auto-select default ─────────────────
   useEffect(() => {
     if (!user) return;
+    setAddrLoading(true);
     supabase
       .from('saved_addresses')
       .select('*')
-      .eq('profile_id', user.id)
+      .eq('user_id', user.id)
       .order('is_default', { ascending: false })
-      .then(({ data }) => {
-        if (!data) return;
-        setSavedAddresses(data);
-        const def = data.find((a: SavedAddress) => a.is_default);
-        if (def && !address) {
-          setAddress(def.address);
-          setCity(def.city);
-          setState(def.state ?? '');
-          setSelectedAddrId(def.id);
+      .order('created_at', { ascending: false })
+      .then(({ data, error: aErr }) => {
+        setAddrLoading(false);
+        if (aErr || !data || data.length === 0) {
+          setSavedAddresses([]);
+          setShowNewAddr(true); // nothing saved -> go straight to the map form
+          return;
         }
+        setSavedAddresses(data as SavedAddress[]);
+        const def = (data as SavedAddress[]).find(a => a.is_default) ?? (data as SavedAddress[])[0];
+        applySavedAddress(def);
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // ── Address helpers ───────────────────────────────────────────
+  function applySavedAddress(addr: SavedAddress) {
+    setSelectedAddrId(addr.id);
+    setAddress(addr.address);
+    setCity(addr.city);
+    setState(addr.state ?? '');
+    setError('');
+    if (addr.latitude != null && addr.longitude != null) {
+      setCustomerCoords({ lat: addr.latitude, lng: addr.longitude });
+      setAddrNotice('');
+      setShowNewAddr(false);
+    } else {
+      // Older address without a map pin: open the map so the customer can drop one.
+      setCustomerCoords(null);
+      setAddrNotice('This saved address has no map pin yet. Drop a pin so the rider can find you.');
+      setShowNewAddr(true);
+    }
+  }
+
+  function handleNewAddress() {
+    setSelectedAddrId(null);
+    setAddress(''); setCity(''); setState('');
+    setCustomerCoords(null);
+    setAddrNotice('');
+    setShowNewAddr(true);
+  }
+
+  function handleUseMyLocation() {
+    if (selectedAddrId || !showNewAddr) handleNewAddress();
+    setLocateSignal(s => s + 1);
+  }
+
+  // Called by the map whenever the pin moves. Auto-fills the address fields
+  // (the customer can still edit them, e.g. to add a flat number).
+  function handleLocationChange(loc: PickedLocation) {
+    setCustomerCoords({ lat: loc.latitude, lng: loc.longitude });
+    setError('');
+    if (loc.address !== undefined) setAddress(loc.address);
+    if (loc.city)  setCity(loc.city);
+    if (loc.state) setState(loc.state);
+  }
 
   // ── Live delivery fee (distance-based) ───────────────────────
   const feeResult = useMemo(() => {
@@ -125,17 +198,6 @@ function CheckoutInner() {
   const deliveryFee  = isRealEstate ? 0 : (feeResult?.fee ?? 100);
   const platformFee  = Math.round(subtotal * 0.10);
   const total        = subtotal + deliveryFee;
-
-  // ── GPS location ──────────────────────────────────────────────
-  function detectLocation() {
-    if (!navigator.geolocation) return;
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      pos => { setCustomerCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setLocating(false); },
-      ()  => setLocating(false),
-      { timeout: 8000 }
-    );
-  }
 
   // ── Fetch (or create) this customer's dedicated Paystack account ──
   async function fetchTransferAccount() {
@@ -189,6 +251,7 @@ function CheckoutInner() {
     const missing: string[] = [];
     if (!address.trim())    missing.push(isRealEstate ? 'Your address' : 'Delivery address');
     if (!city.trim())       missing.push('City');
+    if (!isRealEstate && !customerCoords) missing.push('Your pinned location on the map');
     if (!phone.trim())      missing.push('Phone number');
     if (items.length === 0) missing.push('At least one item in your cart');
 
@@ -208,13 +271,14 @@ function CheckoutInner() {
     setRiderSearchErr('');
 
     const searchStart = Date.now();
-    const { data, error: rErr } = await supabase
-      .from('riders')
-      .select('id, full_name, vehicle_type, total_deliveries')
-      .eq('is_online', true)
-      .eq('is_active', true)
-      .ilike('city', store.city)
-      .order('total_deliveries', { ascending: false });
+    // Matches riders by distance to the vendor's pin (25 km) OR by the same city name,
+    // through a database function so customers never read the riders table directly.
+    const { data, error: rErr } = await supabase.rpc('find_nearby_riders', {
+      p_city:      store.city,
+      p_lat:       store.latitude  ?? null,
+      p_lng:       store.longitude ?? null,
+      p_radius_km: 25,
+    });
 
     // Keep the "searching" state on screen for at least ~1.1s so it
     // doesn't flash instantly even when the query is fast.
@@ -231,7 +295,7 @@ function CheckoutInner() {
   }
 
   function pickRider(rider: Rider) {
-    setAssignedRider(rider);
+    setRider(rider);
     setShowRiderModal(false);
     runPaymentFlow();
   }
@@ -239,7 +303,7 @@ function CheckoutInner() {
   // Let the customer proceed without a rider if none are online right
   // now — dispatch can assign one manually afterwards.
   function continueWithoutRider() {
-    setAssignedRider(null);
+    setRider(null);
     setShowRiderModal(false);
     runPaymentFlow();
   }
@@ -257,6 +321,8 @@ function CheckoutInner() {
         delivery_address: address,
         delivery_city:    city,
         delivery_state:   state || null,
+        delivery_latitude:  customerCoords?.lat ?? null,
+        delivery_longitude: customerCoords?.lng ?? null,
         customer_phone:   phone,
         delivery_note:    note || null,
         scheduled_at:     scheduled || null,
@@ -266,7 +332,7 @@ function CheckoutInner() {
         payment_method:   payment,
         payment_status:   paystackRef ? 'paid' : 'pending',
         payment_reference: paystackRef ?? null,
-        assigned_rider_id: isRealEstate ? null : (assignedRider?.id ?? null),
+        assigned_rider_id: isRealEstate ? null : (riderRef.current?.id ?? null),
       }])
       .select('id, order_number')
       .single();
@@ -287,6 +353,22 @@ function CheckoutInner() {
       }))
     );
     if (iErr) throw new Error(iErr.message);
+
+    // Optionally remember a brand-new address for next time (never blocks the order)
+    if (showNewAddr && !selectedAddrId && saveForLater && customerCoords && address.trim() && city.trim()) {
+      supabase.from('saved_addresses').insert({
+        user_id:    user.id,
+        label:      newLabel,
+        address,
+        city,
+        state:      state || null,
+        latitude:   customerCoords.lat,
+        longitude:  customerCoords.lng,
+        is_default: savedAddresses.length === 0,
+      }).then(({ error: sErr }) => {
+        if (sErr) console.warn('Could not save address:', sErr.message);
+      });
+    }
 
     fetch('/api/notify-vendor', {
       method:  'POST',
@@ -526,7 +608,7 @@ function CheckoutInner() {
       {/* Missing details validation modal */}
       <AnimatePresence>
         {showValidationModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 9999 }}>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setShowValidationModal(false)} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
             <motion.div initial={{ scale: .9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: .9, opacity: 0 }}
@@ -561,7 +643,7 @@ function CheckoutInner() {
       {/* Rider search / selection modal */}
       <AnimatePresence>
         {showRiderModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 9999 }}>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => !ridersLoading && setShowRiderModal(false)} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
             <motion.div initial={{ scale: .9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: .9, opacity: 0 }}
@@ -640,7 +722,7 @@ function CheckoutInner() {
           account for this customer from Paystack instead of a shared account. */}
       <AnimatePresence>
         {showBankModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 9999 }}>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setShowBankModal(false)} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
             <motion.div initial={{ scale: .9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: .9, opacity: 0 }}
@@ -738,65 +820,146 @@ function CheckoutInner() {
 
             {/* Address card */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between gap-3 mb-4">
                 <h2 className="font-black text-gray-900 flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-orange-500" />
                   {isRealEstate ? 'Your Contact Details' : 'Delivery Address'}
                 </h2>
                 {!isRealEstate && (
-                  <button type="button" onClick={detectLocation} disabled={locating}
-                    className="flex items-center gap-1.5 text-xs font-bold text-orange-600 bg-orange-50 border border-orange-100 px-3 py-1.5 rounded-full hover:bg-orange-100 disabled:opacity-60 transition-all">
-                    {locating
-                      ? <><div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />Locating...</>
-                      : <><Navigation className="w-3 h-3" />Use my location</>
-                    }
+                  <button type="button" onClick={handleUseMyLocation}
+                    className="flex items-center gap-1.5 text-xs font-bold text-orange-600 bg-orange-50 border border-orange-100 px-3 py-1.5 rounded-full hover:bg-orange-100 transition-all">
+                    <Navigation className="w-3 h-3" />Use my location
                   </button>
                 )}
               </div>
 
               {/* Saved addresses */}
-              {savedAddresses.length > 0 && (
-                <div className="mb-4 space-y-2">
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Saved Addresses</p>
-                  {savedAddresses.map(addr => (
-                    <button key={addr.id} type="button"
-                      onClick={() => { setSelectedAddrId(addr.id); setAddress(addr.address); setCity(addr.city); setState(addr.state ?? ''); }}
-                      className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${selectedAddrId === addr.id ? 'border-orange-400 bg-orange-50' : 'border-gray-200 hover:border-orange-200'}`}>
-                      <MapPin className={`w-4 h-4 flex-shrink-0 ${selectedAddrId === addr.id ? 'text-orange-500' : 'text-gray-400'}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-gray-900">{addr.label}</span>
-                          {addr.is_default && <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-bold">Default</span>}
-                        </div>
-                        <p className="text-xs text-gray-500 truncate">{addr.address}, {addr.city}</p>
-                      </div>
-                      {selectedAddrId === addr.id && <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0"><span className="text-white text-xs font-black">✓</span></div>}
-                    </button>
-                  ))}
-                  <button type="button" onClick={() => { setSelectedAddrId(null); setAddress(''); setCity(''); setState(''); }}
-                    className="w-full py-2 text-xs text-gray-400 font-semibold hover:text-orange-500 transition-colors">
-                    + Enter a different address
+              {addrLoading ? (
+                <div className="grid sm:grid-cols-2 gap-3 mb-4">
+                  {[1, 2].map(i => <div key={i} className="animate-pulse h-24 rounded-2xl bg-gray-100" />)}
+                </div>
+              ) : savedAddresses.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2.5">Your Saved Addresses</p>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {savedAddresses.map(addr => {
+                      const active = selectedAddrId === addr.id;
+                      const pinned = addr.latitude != null && addr.longitude != null;
+                      const Icon   = addr.label === 'Work' ? Briefcase : addr.label === 'Other' ? MapPin : Home;
+                      return (
+                        <button key={addr.id} type="button" onClick={() => applySavedAddress(addr)}
+                          className={`relative text-left p-4 rounded-2xl border-2 transition-all ${
+                            active
+                              ? 'border-orange-400 bg-gradient-to-br from-orange-50 to-amber-50 shadow-md shadow-orange-100'
+                              : 'border-gray-200 bg-white hover:border-orange-200 hover:shadow-sm'
+                          }`}>
+                          <div className="flex items-start gap-3 pr-6">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${active ? 'bg-orange-500 text-white shadow-md shadow-orange-200' : 'bg-gray-100 text-gray-500'}`}>
+                              <Icon className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-black text-gray-900">{addr.label}</span>
+                                {addr.is_default && <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-bold">Default</span>}
+                              </div>
+                              <p className="text-sm text-gray-700 mt-1 line-clamp-2">{addr.address}</p>
+                              <p className="text-xs text-gray-400 mt-0.5 truncate">{addr.city}{addr.state ? `, ${addr.state}` : ''}</p>
+                              <div className="mt-2">
+                                {pinned
+                                  ? <span className="inline-flex items-center gap-1 text-[10px] font-bold text-green-700 bg-green-50 border border-green-100 px-2 py-0.5 rounded-full"><MapPin className="w-2.5 h-2.5" />Pinned</span>
+                                  : <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full"><MapPin className="w-2.5 h-2.5" />No pin yet</span>}
+                              </div>
+                            </div>
+                          </div>
+                          {active && (
+                            <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-orange-500 flex items-center justify-center shadow">
+                              <span className="text-white text-xs font-black">✓</span>
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button type="button" onClick={handleNewAddress}
+                    className={`mt-3 w-full py-3 rounded-2xl border-2 border-dashed text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                      showNewAddr && !selectedAddrId
+                        ? 'border-orange-400 bg-orange-50 text-orange-600'
+                        : 'border-orange-200 text-orange-500 hover:border-orange-400 hover:bg-orange-50'
+                    }`}>
+                    <Plus className="w-4 h-4" /> Use a different address
                   </button>
-                  <div className="border-t border-gray-100" />
                 </div>
               )}
 
+              {/* Map + manual address (new address, or a saved one with no pin yet) */}
+              {!addrLoading && showNewAddr && (
+                <div className="space-y-4 mb-4">
+                  {addrNotice && (
+                    <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                      <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-800 font-medium">{addrNotice}</p>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">
+                      {isRealEstate ? 'Find Your Location' : 'Pin Your Delivery Location *'}
+                    </label>
+                    <p className="text-xs text-gray-400 mb-3">
+                      Search for your area, use your current location, or tap the map to drop a pin. {!isRealEstate && 'The rider uses this pin to find you.'}
+                    </p>
+                    <LocationPicker
+                      value={customerCoords ? { latitude: customerCoords.lat, longitude: customerCoords.lng } : null}
+                      onChange={handleLocationChange}
+                      locateSignal={locateSignal}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
+                      {isRealEstate ? 'Your Address' : 'Street Address'} *{' '}
+                      <span className="normal-case font-normal text-gray-400">(auto-filled, add flat / house number if needed)</span>
+                    </label>
+                    <input type="text" value={address} onChange={e => setAddress(e.target.value)}
+                      placeholder="Pin a location to fill this in" className={ic} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">City *</label>
+                      <input type="text" value={city} onChange={e => setCity(e.target.value)} placeholder="Auto-filled" className={ic} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">State</label>
+                      <input type="text" value={state} onChange={e => setState(e.target.value)} placeholder="Auto-filled" className={ic} />
+                    </div>
+                  </div>
+
+                  {/* Offer to remember a brand-new address */}
+                  {!selectedAddrId && (
+                    <div className="rounded-xl bg-gray-50 border border-gray-100 p-3">
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <input type="checkbox" checked={saveForLater} onChange={e => setSaveForLater(e.target.checked)}
+                          className="w-4 h-4 accent-orange-500" />
+                        <span className="text-sm font-semibold text-gray-700">Save this address for next time</span>
+                      </label>
+                      {saveForLater && (
+                        <div className="flex gap-2 mt-3">
+                          {['Home', 'Work', 'Other'].map(l => (
+                            <button key={l} type="button" onClick={() => setNewLabel(l)}
+                              className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all ${newLabel === l ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>
+                              {l === 'Home' ? '🏠' : l === 'Work' ? '💼' : '📍'} {l}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Phone etc. */}
               <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">{isRealEstate ? 'Your Address' : 'Street Address'} *</label>
-                  <input type="text" value={address} onChange={e => setAddress(e.target.value)}
-                    placeholder={isRealEstate ? "Your current address" : "e.g. 14 Admiralty Way, Lekki"} className={ic} />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">City *</label>
-                    <input type="text" value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Lagos" className={ic} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">State</label>
-                    <input type="text" value={state} onChange={e => setState(e.target.value)} placeholder="e.g. Lagos State" className={ic} />
-                  </div>
-                </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Phone *</label>
                   <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+234 800 000 0000" className={ic} />
@@ -862,7 +1025,7 @@ function CheckoutInner() {
                         style={{ width: `${Math.min(100, ((deliveryFee - 500) / 2500) * 100)}%` }} />
                     </div>
                     <p className="text-xs text-gray-400 mt-1 text-center">
-                      {customerCoords ? '📍 Based on your GPS location' : '🏙 Based on city distance — share location for a more accurate fee'}
+                      {customerCoords ? '📍 Based on your pinned location' : '🏙 Based on city distance — pin your location for a more accurate fee'}
                     </p>
                   </div>
                 </motion.div>
@@ -983,7 +1146,7 @@ function CheckoutInner() {
                       <p className="text-xs font-bold text-green-800 truncate">{assignedRider.full_name}</p>
                       <p className="text-xs text-green-600">~{RIDER_ETA_MIN} min ETA</p>
                     </div>
-                    <button onClick={() => setAssignedRider(null)} className="text-xs font-bold text-green-700 hover:underline flex-shrink-0">Change</button>
+                    <button onClick={() => setRider(null)} className="text-xs font-bold text-green-700 hover:underline flex-shrink-0">Change</button>
                   </div>
                 )}
                 <div className="border-t border-gray-100 pt-4 space-y-1.5 text-sm mb-5">

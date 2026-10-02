@@ -32,6 +32,11 @@ const STATUS_NEXT: Partial<Record<OrderStatus,OrderStatus>> = {
   pending:'confirmed', confirmed:'preparing', preparing:'ready', ready:'on_the_way', on_the_way:'delivered',
 };
 
+// Once a delivery order is ready, the rider (not the vendor) moves it forward:
+// picked up -> on the way -> delivered.
+const riderHandles = (o: Order) =>
+  o.delivery_type === 'delivery' && ['ready', 'picked_up', 'on_the_way'].includes(o.status);
+
 export default function VendorDashboard() {
   const router = useRouter();
   const { user, profile, isVendor, isLoggedIn, loading: al, signOut } = useAuth();
@@ -418,12 +423,18 @@ export default function VendorDashboard() {
 
                   {/* Action buttons */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    {STATUS_NEXT[o.status] && (
+                    {STATUS_NEXT[o.status] && !riderHandles(o) && (
                       <button onClick={()=>advanceOrder(o.id, STATUS_NEXT[o.status]!)}
                         className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-500 text-white text-xs font-bold hover:bg-orange-600 transition-colors">
                         <CheckCircle className="w-3.5 h-3.5"/>
                         Mark as {STATUS_NEXT[o.status]?.replace(/_/g,' ')}
                       </button>
+                    )}
+                    {riderHandles(o) && (
+                      <span className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold">
+                        <Truck className="w-3.5 h-3.5"/>
+                        {o.status === 'ready' ? 'Waiting for a rider to pick up' : 'Rider is handling delivery'}
+                      </span>
                     )}
                     {o.status==='pending' && (
                       <button onClick={()=>advanceOrder(o.id,'cancelled')}

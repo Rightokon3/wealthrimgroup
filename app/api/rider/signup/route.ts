@@ -3,9 +3,19 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { generateVerificationToken } from '@/lib/tokens';
 import { sendVerificationEmail } from '@/lib/mailer';
 
+// Accepts a number or numeric string, returns null for anything else
+function toCoord(v: unknown, min: number, max: number): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= min && n <= max ? n : null;
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { full_name, email, phone, password, city, vehicle_type, vehicle_plate } = await req.json();
+    const {
+      full_name, email, phone, password, city, state,
+      latitude, longitude, vehicle_type, vehicle_plate,
+    } = await req.json();
 
     if (!full_name || !email || !phone || !password || !city || !vehicle_type) {
       return NextResponse.json({ error: 'Please fill in all required fields.' }, { status: 400 });
@@ -15,6 +25,8 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
+    const lat = toCoord(latitude, -90, 90);
+    const lng = toCoord(longitude, -180, 180);
 
     // 1. A real rider account already exists for this email — stop here,
     // this is a genuine "already registered" case.
@@ -31,13 +43,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. An orphaned auth user from a previous broken signup (auth account
+    // 2. An orphaned auth user from a previous broken RIDER signup (auth account
     // with no matching riders row)? Clear it out first so the email never
     // stays permanently stuck.
+    // Safety: only auth users that were created as riders are removed. An account
+    // with this email that belongs to a customer or vendor is never deleted.
     const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
     const orphan = userList?.users?.find(u => u.email?.toLowerCase() === normalizedEmail);
     if (orphan) {
-      await supabaseAdmin.auth.admin.deleteUser(orphan.id);
+      if (orphan.user_metadata?.role === 'rider') {
+        await supabaseAdmin.auth.admin.deleteUser(orphan.id);
+      } else {
+        return NextResponse.json(
+          { error: 'This email is already used by another Drovo account. Use a different email for your rider account.' },
+          { status: 409 }
+        );
+      }
     }
 
     // 3. Create the auth user server-side with the service role.
@@ -62,6 +83,9 @@ export async function POST(req: NextRequest) {
       email: normalizedEmail,
       phone,
       city: String(city).trim(),
+      state: state ? String(state).trim() : null,
+      latitude: lat,
+      longitude: lng,
       vehicle_type,
       vehicle_plate: vehicle_plate || null,
       email_verified: false,

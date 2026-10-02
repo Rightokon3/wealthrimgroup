@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { useForm } from 'react-hook-form';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Store, Utensils, Shirt, Building2, MapPin, Phone, ChevronRight, CheckCircle, Upload, X, AlertCircle } from 'lucide-react';
@@ -9,6 +10,17 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { StoreCategory } from '@/types';
 import { Suspense } from 'react';
+import type { PickedLocation } from '@/components/vendor/LocationPicker';
+
+// Leaflet needs the browser, so it must not render on the server.
+const LocationPicker = dynamic(() => import('@/components/vendor/LocationPicker'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-72 sm:h-80 rounded-2xl border border-gray-200 bg-gray-50 flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  ),
+});
 
 interface SetupForm {
   name: string; description: string; category: StoreCategory;
@@ -36,6 +48,7 @@ function VendorSetupInner() {
   const [saving,       setSaving]       = useState(false);
   const [error,        setError]        = useState('');
   const [done,         setDone]         = useState(false);
+  const [coords,       setCoords]       = useState<{ latitude: number; longitude: number } | null>(null);
 
   const { register, watch, handleSubmit, setValue, formState: { errors } } = useForm<SetupForm>();
   const selectedCategory = watch('category');
@@ -52,6 +65,16 @@ function VendorSetupInner() {
     }
   }, [authLoading, isLoggedIn, isVendor, profile, user, router]);
 
+  // Called by the map whenever the pin moves. Also auto-fills the address fields
+  // (the vendor can still edit them).
+  function handleLocationChange(loc: PickedLocation) {
+    setCoords({ latitude: loc.latitude, longitude: loc.longitude });
+    setError('');
+    if (loc.address !== undefined) setValue('address', loc.address, { shouldValidate: true });
+    if (loc.city)  setValue('city',  loc.city,  { shouldValidate: true });
+    if (loc.state) setValue('state', loc.state);
+  }
+
   async function upload(file: File, path: string): Promise<string|null> {
     const ext  = file.name.split('.').pop() ?? 'jpg';
     const name = `${path}/${Date.now()}.${ext}`;
@@ -62,6 +85,10 @@ function VendorSetupInner() {
 
   const onSubmit = async (data: SetupForm) => {
     if (!user) return;
+    if (!coords) {
+      setError('Please pin your store location on the map before launching.');
+      return;
+    }
     setSaving(true); setError('');
     try {
       // Hard guard: re-check immediately before inserting, in case the
@@ -85,6 +112,8 @@ function VendorSetupInner() {
         address:     data.address,
         city:        data.city,
         state:       data.state,
+        latitude:    coords.latitude,
+        longitude:   coords.longitude,
         phone:       data.phone,
         email:       data.email || null,
         whatsapp:    data.whatsapp || null,
@@ -286,8 +315,17 @@ function VendorSetupInner() {
                   </div>
                 )}
 
+                {/* Map pin — riders use these coordinates to find the store */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Address *</label>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Pin Your Store Location *</label>
+                  <p className="text-xs text-gray-400 mb-3">
+                    Riders use this exact pin to find your store for pickups. If you are at your shop now, tap "Use my current location".
+                  </p>
+                  <LocationPicker value={coords} onChange={handleLocationChange} />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Address * <span className="normal-case font-normal text-gray-400">(auto-filled from the pin, you can edit it)</span></label>
                   <input {...register('address', { required: 'Required' })} type="text" className={ic} placeholder="14 Victoria Island, Lagos" />
                   {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address.message}</p>}
                 </div>

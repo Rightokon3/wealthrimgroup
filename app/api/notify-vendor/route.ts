@@ -4,6 +4,12 @@ import { sendVendorNotificationEmail } from '@/lib/mailer';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendPushToUser } from '@/lib/web-push-server';
 import { notifyAdmins } from '@/lib/notify-admins';
+import { isNearby } from '@/lib/riderMatch';
+
+// Where a rider lands when they tap a new-order notification. Change if yours differs.
+const RIDER_DASHBOARD_URL = '/rider/dashboard';
+// Riders within this distance of the vendor (or in the same city) get the alert.
+const RIDER_RADIUS_KM = 25;
 
 type Body = {
   orderId?: string;
@@ -72,6 +78,7 @@ async function notifyNewOrder(orderId: string) {
       order_items(*),
       stores(
         name, email,
+        city, address, latitude, longitude,
         vendor_id,
         profiles:vendor_id(full_name, email)
       ),
@@ -140,6 +147,15 @@ async function notifyNewOrder(orderId: string) {
     ]);
   }
 
+  // ── Riders: alert nearby online riders ───────────────────────────
+  // Wrapped so a rider-notification problem can never break the vendor,
+  // customer or admin notifications above and below.
+  try {
+    await notifyNearbyRiders(order, store);
+  } catch (err) {
+    console.error('Rider notification failed:', err);
+  }
+
   // ── Admin broadcast: new order ───────────────────────────────────
   await notifyAdmins({
     type: 'new_order',
@@ -150,10 +166,62 @@ async function notifyNewOrder(orderId: string) {
   });
 }
 
+/**
+ * Delivery orders only (viewings have no rider).
+ *  - If the customer picked a rider at checkout and that rider is still online,
+ *    only that rider is alerted.
+ *  - Otherwise every online, active rider within RIDER_RADIUS_KM of the vendor,
+ *    or in the vendor's city, is alerted.
+ */
+async function notifyNearbyRiders(order: any, store: any) {
+  if (!store || order.delivery_type !== 'delivery') return;
+
+  const { data: riders, error } = await supabaseAdmin
+    .from('riders')
+    .select('id, user_id, city, latitude, longitude')
+    .eq('is_online', true)
+    .eq('is_active', true);
+
+  if (error || !riders?.length) return;
+
+  const chosen = order.assigned_rider_id
+    ? riders.find((r: any) => r.id === order.assigned_rider_id)
+    : null;
+
+  const targets = chosen
+    ? [chosen]
+    : riders.filter((r: any) => isNearby(r, store, RIDER_RADIUS_KM));
+
+  const recipients = targets.filter((r: any) => r.user_id);
+  if (recipients.length === 0) return;
+
+  const fee   = Number(order.delivery_fee ?? 0);
+  const title = chosen ? 'New delivery request 🚴' : 'New order nearby 🚴';
+  const message =
+    `${store.name}${store.city ? ` (${store.city})` : ''} → ${order.delivery_city ?? 'customer'}. ` +
+    `Order ${order.order_number}${fee > 0 ? `, delivery fee ₦${fee.toLocaleString()}` : ''}.`;
+
+  await supabaseAdmin.from('notifications').insert(
+    recipients.map((r: any) => ({
+      user_id: r.user_id,
+      type:    'new_delivery',
+      title,
+      body:    message,
+      data:    { order_id: order.id },
+    }))
+  );
+
+  await Promise.allSettled(
+    recipients.map((r: any) =>
+      sendPushToUser(r.user_id, { title, body: message, url: RIDER_DASHBOARD_URL })
+    )
+  );
+}
+
 async function notifyOrderStatus(orderId: string, status: string) {
   const { data: order } = await supabaseAdmin
     .from('orders')
-    .select('id, order_number, customer_id')
+    .select('id, order_number, customer_id, rider_id, stores(name)')
     .eq('id', orderId)
     .single();
 
@@ -172,6 +240,27 @@ async function notifyOrderStatus(orderId: string, status: string) {
     }),
     sendPushToUser(order.customer_id, { title, body: message, url: '/orders' }),
   ]);
+
+  // The assigned rider should know the moment the order is ready to collect
+  const riderId = (order as any).rider_id;
+  if (status === 'ready' && riderId) {
+    try {
+      const { data: rider } = await supabaseAdmin
+        .from('riders').select('user_id').eq('id', riderId).maybeSingle();
+      if (rider?.user_id) {
+        const rTitle   = 'Order ready for pickup 📦';
+        const rMessage = `${(order as any).stores?.name ?? 'The vendor'}: Order ${order.order_number} is ready. Head over to pick it up.`;
+        await Promise.all([
+          supabaseAdmin.from('notifications').insert({
+            user_id: rider.user_id, type: 'order_ready', title: rTitle, body: rMessage, data: { order_id: order.id },
+          }),
+          sendPushToUser(rider.user_id, { title: rTitle, body: rMessage, url: `/rider/orders/${order.id}` }),
+        ]);
+      }
+    } catch (err) {
+      console.error('Rider ready notification failed:', err);
+    }
+  }
 }
 
 async function notifyWelcome(vendorId: string) {

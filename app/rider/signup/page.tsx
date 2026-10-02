@@ -1,9 +1,21 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import { Bike, Eye, EyeOff, ChevronRight, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import type { PickedLocation } from '@/components/vendor/LocationPicker';
+
+// Leaflet needs the browser, so it must not render on the server.
+const LocationPicker = dynamic(() => import('@/components/vendor/LocationPicker'), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-2xl border border-gray-200 bg-gray-50 flex items-center justify-center" style={{ height: 320 }}>
+      <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  ),
+});
 
 type VehicleType = 'motorcycle' | 'bicycle' | 'car';
 
@@ -13,30 +25,54 @@ const VEHICLE_OPTIONS: { value: VehicleType; label: string; icon: string }[] = [
   { value: 'car', label: 'Car', icon: '🚗' },
 ];
 
+const inputCls = 'w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium';
+
 export default function RiderSignup() {
   const router = useRouter();
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const [form, setForm] = useState({
-    full_name: '', email: '', phone: '', password: '', city: '',
+    full_name: '', email: '', phone: '', password: '', city: '', state: '',
     vehicle_type: 'motorcycle' as VehicleType,
     vehicle_plate: '',
   });
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
   function set(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }));
     setError('');
   }
 
+  // Called by the map whenever the pin moves. Auto-fills city / state.
+  function handleLocation(loc: PickedLocation) {
+    setCoords({ latitude: loc.latitude, longitude: loc.longitude });
+    setError('');
+    setForm(f => ({
+      ...f,
+      city:  loc.city  ? loc.city  : f.city,
+      state: loc.state ? loc.state : f.state,
+    }));
+  }
+
   function validateStep1() {
-    if (!form.full_name || !form.email || !form.phone || !form.city || !form.password) {
+    if (!form.full_name || !form.email || !form.phone || !form.password) {
       setError('Please fill in all fields.'); return false;
     }
     if (form.password.length < 6) {
       setError('Password must be at least 6 characters.'); return false;
+    }
+    return true;
+  }
+
+  function validateStep2() {
+    if (!coords) {
+      setError('Please pin the area where you are based on the map.'); return false;
+    }
+    if (!form.city.trim()) {
+      setError('We could not detect your city. Please type it in.'); return false;
     }
     return true;
   }
@@ -48,7 +84,11 @@ export default function RiderSignup() {
       const res = await fetch('/api/rider/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          latitude:  coords?.latitude  ?? null,
+          longitude: coords?.longitude ?? null,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Signup failed. Try again.');
@@ -74,7 +114,7 @@ export default function RiderSignup() {
         </div>
 
         <div className="flex items-center gap-2 mb-6">
-          {[1, 2].map(s => (
+          {[1, 2, 3].map(s => (
             <div key={s} className={`h-1.5 flex-1 rounded-full transition-all ${s <= step ? 'bg-green-500' : 'bg-gray-200'}`} />
           ))}
         </div>
@@ -86,6 +126,7 @@ export default function RiderSignup() {
             </div>
           )}
 
+          {/* STEP 1 — Personal */}
           {step === 1 && (
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
               <h2 className="font-black text-gray-900 mb-4">Personal Details</h2>
@@ -93,38 +134,26 @@ export default function RiderSignup() {
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Full Name *</label>
                 <input type="text" value={form.full_name} onChange={e => set('full_name', e.target.value)}
-                  placeholder="Your full name"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium" />
+                  placeholder="Your full name" className={inputCls} />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Email *</label>
                 <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
-                  placeholder="you@email.com"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium" />
+                  placeholder="you@email.com" className={inputCls} />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Phone *</label>
                 <input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)}
-                  placeholder="080XXXXXXXX"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium" />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">City *</label>
-                <input type="text" value={form.city} onChange={e => set('city', e.target.value)}
-                  placeholder="e.g. Lagos"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium" />
-                <p className="text-xs text-gray-400 mt-1">Used to match you with nearby delivery orders.</p>
+                  placeholder="080XXXXXXXX" className={inputCls} />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Password *</label>
                 <div className="relative">
                   <input type={showPw ? 'text' : 'password'} value={form.password} onChange={e => set('password', e.target.value)}
-                    placeholder="Min. 6 characters"
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium pr-11" />
+                    placeholder="Min. 6 characters" className={`${inputCls} pr-11`} />
                   <button type="button" onClick={() => setShowPw(v => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                     {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -141,7 +170,45 @@ export default function RiderSignup() {
             </motion.div>
           )}
 
+          {/* STEP 2 — Base location (map) */}
           {step === 2 && (
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
+              <h2 className="font-black text-gray-900">Where are you based?</h2>
+              <p className="text-xs text-gray-400 -mt-2">
+                Search your area, use your current location, or tap the map. You will be matched with orders from vendors near this spot.
+              </p>
+
+              <LocationPicker value={coords} onChange={handleLocation} />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">City *</label>
+                  <input type="text" value={form.city} onChange={e => set('city', e.target.value)}
+                    placeholder="Auto-filled" className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">State</label>
+                  <input type="text" value={form.state} onChange={e => set('state', e.target.value)}
+                    placeholder="Auto-filled" className={inputCls} />
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-2">
+                <button onClick={() => setStep(1)}
+                  className="flex-1 py-3.5 border-2 border-gray-200 text-gray-600 font-black rounded-xl hover:border-gray-300 transition-all">
+                  Back
+                </button>
+                <button
+                  onClick={() => { if (validateStep2()) setStep(3); }}
+                  className="flex-1 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black rounded-xl flex items-center justify-center gap-2 hover:from-green-600 hover:to-emerald-700 transition-all">
+                  Next <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* STEP 3 — Vehicle */}
+          {step === 3 && (
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
               <h2 className="font-black text-gray-900 mb-4">Vehicle Details</h2>
 
@@ -149,7 +216,7 @@ export default function RiderSignup() {
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Vehicle Type *</label>
                 <div className="grid grid-cols-3 gap-3">
                   {VEHICLE_OPTIONS.map(v => (
-                    <button key={v.value} onClick={() => set('vehicle_type', v.value)}
+                    <button key={v.value} type="button" onClick={() => set('vehicle_type', v.value)}
                       className={`py-3 rounded-xl border-2 text-center transition-all ${
                         form.vehicle_type === v.value ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300'
                       }`}>
@@ -165,12 +232,11 @@ export default function RiderSignup() {
                   Plate Number <span className="text-gray-300 font-normal normal-case">(optional)</span>
                 </label>
                 <input type="text" value={form.vehicle_plate} onChange={e => set('vehicle_plate', e.target.value.toUpperCase())}
-                  placeholder="e.g. LAG-123-AB"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium font-mono" />
+                  placeholder="e.g. LAG-123-AB" className={`${inputCls} font-mono`} />
               </div>
 
               <div className="flex gap-3 mt-2">
-                <button onClick={() => setStep(1)}
+                <button onClick={() => setStep(2)}
                   className="flex-1 py-3.5 border-2 border-gray-200 text-gray-600 font-black rounded-xl hover:border-gray-300 transition-all">
                   Back
                 </button>
