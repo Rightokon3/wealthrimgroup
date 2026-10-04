@@ -13,6 +13,7 @@ import { Rider, Order, OrderStatus } from '@/types';
 import NotificationBell from '@/components/NotificationBell';
 import dynamic from 'next/dynamic';
 import type { NavTarget } from '@/components/rider/LiveNavigation';
+import { useShareRiderLocation } from '@/lib/useShareRiderLocation';
 
 // Leaflet needs the browser, so the navigation view is loaded client-side only.
 const LiveNavigation = dynamic(() => import('@/components/rider/LiveNavigation'), { ssr: false });
@@ -40,6 +41,7 @@ const ACCEPT_MESSAGES: Record<string, string> = {
 type Tab = 'available' | 'active' | 'history';
 
 const FINISHED: string[] = ['delivered', 'cancelled', 'refunded'];
+const PRE_READY: string[] = ['pending', 'confirmed', 'preparing'];
 
 function formatSince(iso: string | null | undefined) {
   if (!iso) return null;
@@ -66,6 +68,7 @@ export default function RiderDashboard() {
   const [accepting, setAccepting] = useState<string | null>(null);
   const [notice,    setNotice]    = useState('');
   const [navTarget, setNavTarget] = useState<NavTarget | null>(null);
+  const [starting,  setStarting]  = useState<string | null>(null);
 
   // Auth guard — matches vendor dashboard pattern exactly
   useEffect(() => {
@@ -174,6 +177,104 @@ export default function RiderDashboard() {
     }
     setNotice(error ? `Could not accept the order: ${error.message}` : (ACCEPT_MESSAGES[result] ?? 'Could not accept this order.'));
   }
+
+  // One tap: picked up -> on the way, then open live navigation to the customer.
+  async function startDelivery(order: Order) {
+    if (!rider) return;
+    setStarting(order.id);
+    setNotice('');
+
+    const steps: { from: OrderStatus; to: OrderStatus }[] = [
+      { from: 'ready',     to: 'picked_up' },
+      { from: 'picked_up', to: 'on_the_way' },
+    ];
+
+    for (const step of steps) {
+      // The status + rider checks stop this if the order was cancelled or changed meanwhile
+      const { data, error } = await supabase
+        .from('orders')
+        .update({ status: step.to })
+        .eq('id', order.id)
+        .eq('rider_id', rider.id)
+        .eq('status', step.from)
+        .select('id');
+
+      if (error || !data || data.length === 0) {
+        setNotice(error?.message ?? 'Could not start this delivery. The order may have changed. Please refresh.');
+        setStarting(null);
+        await fetchOrders();
+        return;
+      }
+
+      // One customer alert for the whole "pick up and go" action (with the track link)
+      if (step.to === 'on_the_way') {
+        fetch('/api/notify-vendor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'order_status', orderId: order.id, status: step.to }),
+        }).catch(e => console.warn('Customer status notification failed:', e));
+      }
+    }
+
+    await fetchOrders();
+    setStarting(null);
+
+    const o = order as any;
+    if (o.delivery_latitude != null && o.delivery_longitude != null) {
+      setNavTarget({ lat: Number(o.delivery_latitude), lng: Number(o.delivery_longitude), label: 'the customer', orderId: order.id });
+    } else {
+      router.push(`/rider/orders/${order.id}`);
+    }
+  }
+
+  // What the big button on an Active card does, depending on the order's stage
+  function renderActiveAction(order: Order) {
+    if (order.status === 'ready') {
+      return (
+        <div className="space-y-2">
+          <button
+            onClick={() => startDelivery(order)}
+            disabled={starting === order.id}
+            className="w-full py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black rounded-xl flex items-center justify-center gap-2 hover:from-green-600 hover:to-emerald-700 transition-all disabled:opacity-60 text-sm shadow-md shadow-green-100"
+          >
+            {starting === order.id
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Starting...</>
+              : <><Bike className="w-4 h-4" /> Pick Up & Start Delivery</>}
+          </button>
+          <Link href={`/rider/orders/${order.id}`} className="block text-center text-xs font-bold text-gray-400 hover:text-gray-600">
+            View details
+          </Link>
+        </div>
+      );
+    }
+
+    if (PRE_READY.includes(order.status)) {
+      return (
+        <div className="space-y-2">
+          <div className="w-full py-3 rounded-xl bg-gray-100 text-gray-400 font-black text-sm flex items-center justify-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Waiting for the vendor to mark it ready
+          </div>
+          <Link href={`/rider/orders/${order.id}`} className="block text-center text-xs font-bold text-gray-400 hover:text-gray-600">
+            View details
+          </Link>
+        </div>
+      );
+    }
+
+    return (
+      <Link href={`/rider/orders/${order.id}`}
+        className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-black rounded-xl flex items-center justify-center gap-2 text-sm">
+        <MapPin className="w-4 h-4" /> Manage Delivery <ChevronRight className="w-4 h-4" />
+      </Link>
+    );
+  }
+
+  // Keep the customer's tracking page live while delivering, even if the map is closed.
+  // (When the navigation screen is open, it shares the location itself.)
+  const deliveringIds = orders
+    .filter(o => o.rider_id === rider?.id && ['picked_up', 'on_the_way'].includes(o.status))
+    .map(o => o.id);
+  useShareRiderLocation(deliveringIds, !navTarget);
 
   if (al || (isLoggedIn && !rider && loading)) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -333,12 +434,7 @@ export default function RiderDashboard() {
                     <EmptyState icon={<Bike className="w-10 h-10 text-gray-200" />}
                       title="No active deliveries" sub="Accept an order from the Available tab to start." />
                   ) : activeOrders.map(order => (
-                    <OrderCard key={order.id} order={order} riderId={rider?.id} onNavigate={setNavTarget} action={
-                      <Link href={`/rider/orders/${order.id}`}
-                        className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-black rounded-xl flex items-center justify-center gap-2 text-sm">
-                        <MapPin className="w-4 h-4" /> Manage Delivery <ChevronRight className="w-4 h-4" />
-                      </Link>
-                    } />
+                    <OrderCard key={order.id} order={order} riderId={rider?.id} onNavigate={setNavTarget} action={renderActiveAction(order)} />
                   ))}
                 </>
               )}
@@ -455,13 +551,13 @@ function OrderCard({ order, action, riderId, onNavigate }: { order: Order; actio
       {mine && (storePin || customerPin) && (
         <div className="grid grid-cols-2 gap-2">
           {storePin && (
-            <button type="button" onClick={() => onNavigate?.({ ...storePin, label: store?.name ?? 'the store' })}
+            <button type="button" onClick={() => onNavigate?.({ ...storePin, label: store?.name ?? 'the store', orderId: order.id })}
               className="flex items-center justify-center gap-1.5 py-2 rounded-xl border border-orange-200 text-orange-600 text-xs font-bold hover:bg-orange-50">
               <Navigation className="w-3.5 h-3.5" /> Navigate to store
             </button>
           )}
           {customerPin && (
-            <button type="button" onClick={() => onNavigate?.({ ...customerPin, label: 'the customer' })}
+            <button type="button" onClick={() => onNavigate?.({ ...customerPin, label: 'the customer', orderId: order.id })}
               className="flex items-center justify-center gap-1.5 py-2 rounded-xl border border-green-200 text-green-700 text-xs font-bold hover:bg-green-50">
               <Navigation className="w-3.5 h-3.5" /> Navigate to customer
             </button>

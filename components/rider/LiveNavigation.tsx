@@ -11,12 +11,15 @@ import { createPortal } from 'react-dom';
 import { MapContainer, TileLayer, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { useShareRiderLocation } from '@/lib/useShareRiderLocation';
 import { ArrowLeft, LocateFixed, Volume2, VolumeX, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 
 export interface NavTarget {
   lat: number;
   lng: number;
   label: string;
+  /** When set, the rider's live position is shared with this order's customer while delivering. */
+  orderId?: string;
 }
 
 interface LatLng { lat: number; lng: number }
@@ -200,6 +203,9 @@ export default function LiveNavigation({ target, onClose }: { target: NavTarget;
   useEffect(() => { voiceRef.current = voice; }, [voice]);
 
   const dest = useMemo<LatLng>(() => ({ lat: target.lat, lng: target.lng }), [target.lat, target.lng]);
+
+  // Lets the customer watch this rider on their tracking page (only works once the order is picked up)
+  useShareRiderLocation(target.orderId ? [target.orderId] : [], true);
 
   // Live GPS
   useEffect(() => {

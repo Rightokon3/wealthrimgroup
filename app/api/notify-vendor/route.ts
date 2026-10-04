@@ -22,8 +22,8 @@ const STATUS_MESSAGES: Record<string, string> = {
   confirmed:  'Your order has been confirmed by the vendor.',
   preparing:  'Your order is being prepared.',
   ready:      'Your order is ready.',
-  picked_up:  'Your order has been picked up by the rider.',
-  on_the_way: 'Your order is on the way! 🚴',
+  picked_up:  'Your order has been picked up by the rider. Tap to track it live.',
+  on_the_way: 'Your order has been sent out for delivery! 🚴 Would you like to track it? Tap to follow your rider live.',
   delivered:  'Your order has been delivered. Enjoy! 🎉',
   cancelled:  'Your order has been cancelled.',
   refunded:   'Your order has been refunded.',
@@ -227,7 +227,9 @@ async function notifyOrderStatus(orderId: string, status: string) {
 
   if (!order?.customer_id) return;
 
-  const title   = 'Order Update';
+  const trackable = status === 'picked_up' || status === 'on_the_way';
+  const trackUrl  = trackable ? `/orders/${order.id}/track` : '/orders';
+  const title   = status === 'on_the_way' ? 'Your order is on the way 🚴' : 'Order Update';
   const message = STATUS_MESSAGES[status] ?? `Your order ${order.order_number} status changed to ${status.replace(/_/g, ' ')}.`;
 
   await Promise.all([
@@ -236,9 +238,9 @@ async function notifyOrderStatus(orderId: string, status: string) {
       type: 'order_status',
       title,
       body: `${order.order_number}: ${message}`,
-      data: { order_id: order.id, status },
+      data: { order_id: order.id, status, url: trackUrl },
     }),
-    sendPushToUser(order.customer_id, { title, body: message, url: '/orders' }),
+    sendPushToUser(order.customer_id, { title, body: message, url: trackUrl }),
   ]);
 
   // The assigned rider should know the moment the order is ready to collect

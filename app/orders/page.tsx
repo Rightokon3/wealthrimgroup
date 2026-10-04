@@ -1,14 +1,23 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
-import { ShoppingCart, Clock, CheckCircle, XCircle, Truck, Package, MapPin, Phone, ChevronDown, ChevronUp, Star } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ShoppingCart, Clock, CheckCircle, XCircle, Truck, Package, MapPin, Phone, ChevronDown, ChevronUp, Star, Navigation, X } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Order, OrderStatus, CATEGORY_META } from '@/types';
 
-const STATUS_STEPS: OrderStatus[] = ['picked_up' ,'pending','confirmed','preparing','ready','on_the_way','delivered'];
+// The 5 dots of the progress bar
+const STATUS_STEPS: OrderStatus[] = ['pending','confirmed','preparing','ready','on_the_way'];
+
+// Which dot an order is on (picked_up sits between "ready" and "on the way")
+const PROGRESS: Partial<Record<OrderStatus, number>> = {
+  pending: 0, confirmed: 1, preparing: 2, ready: 3, picked_up: 4, on_the_way: 4,
+};
+
+// Statuses where the rider has the order and can be tracked
+const TRACKABLE: string[] = ['picked_up', 'on_the_way'];
 
 const STATUS_META: Record<OrderStatus,{label:string;icon:React.ReactNode;color:string}> = {
   picked_up:  { label:'Picked Up',    icon:<CheckCircle className="w-4 h-4"/>,  color:'bg-green-100 text-green-700 border-green-200' },
@@ -29,11 +38,36 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [expanded,setExpanded]= useState<string|null>(null);
   const [reviewed,setReviewed]= useState<string[]>([]);
+  const [trackPromptId, setTrackPromptId] = useState<string|null>(null);
+  const prompted = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!al && !isLoggedIn) router.replace('/auth/login?next=/orders');
     if (user) fetchOrders();
   },[al,isLoggedIn,user]);
+
+  // Live order updates. The moment a rider picks an order up we ask the customer
+  // "Would you like to track it?"
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`my-orders-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders', filter: `customer_id=eq.${user.id}` },
+        payload => {
+          const row = payload.new as any;
+          setOrders(prev => prev.map(o => o.id === row.id ? { ...o, status: row.status, rider_id: row.rider_id } as Order : o));
+
+          if (TRACKABLE.includes(row.status) && row.delivery_type === 'delivery' && !prompted.current.has(row.id)) {
+            prompted.current.add(row.id);
+            setTrackPromptId(row.id);
+          }
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
 
   async function fetchOrders() {
     const { data } = await supabase
@@ -54,8 +88,44 @@ export default function OrdersPage() {
 
   if (al) return <div className="min-h-screen pt-[64px] flex items-center justify-center"><div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"/></div>;
 
+  const promptOrder = trackPromptId ? orders.find(o => o.id === trackPromptId) : null;
+
   return (
     <div className="min-h-screen pt-[64px] bg-gray-50">
+      {/* "Your order is on the way. Track it?" popup */}
+      <AnimatePresence>
+        {promptOrder && (
+          <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 9999 }}>
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
+              onClick={()=>setTrackPromptId(null)} className="absolute inset-0 bg-black/50 backdrop-blur-sm"/>
+            <motion.div initial={{scale:.9,opacity:0}} animate={{scale:1,opacity:1}} exit={{scale:.9,opacity:0}}
+              className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center">
+              <button onClick={()=>setTrackPromptId(null)} aria-label="Close"
+                className="absolute top-4 right-4 w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center">
+                <X className="w-4 h-4"/>
+              </button>
+              <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
+                <Truck className="w-8 h-8 text-blue-600"/>
+              </div>
+              <h3 className="font-black text-gray-900 text-lg mb-1">Your order is on its way! 🚴</h3>
+              <p className="text-gray-500 text-sm mb-5">
+                {promptOrder.stores?.name ? `${promptOrder.stores.name}'s` : 'Your'} order <span className="font-mono font-bold">{promptOrder.order_number}</span> has been sent out for delivery. Would you like to track your rider live?
+              </p>
+              <div className="flex gap-3">
+                <button onClick={()=>setTrackPromptId(null)}
+                  className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50">
+                  Not now
+                </button>
+                <Link href={`/orders/${promptOrder.id}/track`} onClick={()=>setTrackPromptId(null)}
+                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-black text-sm flex items-center justify-center gap-2 hover:from-blue-600 hover:to-indigo-700">
+                  <Navigation className="w-4 h-4"/> Yes, track it
+                </Link>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <div className="bg-gradient-to-r from-orange-500 to-red-600 text-white py-10">
         <div className="max-w-[800px] mx-auto px-6">
           <h1 className="text-3xl font-black mb-1">My Orders</h1>
@@ -76,9 +146,10 @@ export default function OrdersPage() {
         ) : orders.map(order=>{
           const meta    = order.stores ? CATEGORY_META[order.stores.category ] : null;
           const statusM = STATUS_META[order.status];
-          const isActive= ['pending','confirmed','preparing','ready','on_the_way'].includes(order.status);
-          const stepIdx = STATUS_STEPS.indexOf(order.status);
+          const isActive= ['pending','confirmed','preparing','ready','picked_up','on_the_way'].includes(order.status);
+          const stepIdx = PROGRESS[order.status] ?? 0;
           const isOpen  = expanded===order.id;
+          const canTrack = TRACKABLE.includes(order.status) && (order as any).delivery_type !== 'viewing';
 
           return (
             <motion.div key={order.id} initial={{opacity:0,y:10}} animate={{opacity:1,y:0}}
@@ -112,11 +183,19 @@ export default function OrdersPage() {
                   </button>
                 </div>
 
+                {/* Track Delivery: appears as soon as the rider has picked the order up */}
+                {canTrack && (
+                  <Link href={`/orders/${order.id}/track`}
+                    className="mt-4 w-full py-3 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-black text-sm flex items-center justify-center gap-2 hover:from-blue-600 hover:to-indigo-700 shadow-md shadow-blue-100">
+                    <Navigation className="w-4 h-4"/> Track Delivery
+                  </Link>
+                )}
+
                 {/* Progress bar for active orders */}
-                {isActive && order.status!=='cancelled' && (
+                {isActive && (
                   <div className="mt-4">
                     <div className="flex items-center justify-between mb-2">
-                      {STATUS_STEPS.slice(0,5).map((s,i)=>(
+                      {STATUS_STEPS.map((s,i)=>(
                         <div key={s} className="flex items-center flex-1">
                           <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-black transition-all ${i<=stepIdx?'bg-orange-500 text-white':'bg-gray-200 text-gray-400'}`}>
                             {i<stepIdx?'✓':i+1}

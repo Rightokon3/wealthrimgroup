@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Order, OrderStatus, Rider } from '@/types';
 import type { NavTarget } from '@/components/rider/LiveNavigation';
+import { useShareRiderLocation } from '@/lib/useShareRiderLocation';
 
 // Leaflet needs the browser, so the navigation view is loaded client-side only.
 const LiveNavigation = dynamic(() => import('@/components/rider/LiveNavigation'), { ssr: false });
@@ -54,6 +55,12 @@ export default function RiderOrderDetail() {
   const [updating,  setUpdating]  = useState(false);
   const [err,       setErr]       = useState('');
   const [navTarget, setNavTarget] = useState<NavTarget | null>(null);
+
+  // Share the rider's live position with the customer while this order is out for delivery
+  useShareRiderLocation(
+    order && ['picked_up', 'on_the_way'].includes(order.status) ? [order.id] : [],
+    !navTarget
+  );
 
   useEffect(() => {
     if (al) return;
@@ -239,7 +246,7 @@ export default function RiderOrderDetail() {
               <button
                 type="button"
                 disabled={!storePin}
-                onClick={() => storePin && setNavTarget({ ...storePin, label: store?.name ?? 'the store' })}
+                onClick={() => storePin && setNavTarget({ ...storePin, label: store?.name ?? 'the store', orderId: order.id })}
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${
                   !afterPickup
                     ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-md shadow-orange-100'
@@ -250,7 +257,7 @@ export default function RiderOrderDetail() {
               <button
                 type="button"
                 disabled={!customerPin}
-                onClick={() => customerPin && setNavTarget({ ...customerPin, label: customerName })}
+                onClick={() => customerPin && setNavTarget({ ...customerPin, label: customerName, orderId: order.id })}
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${
                   afterPickup
                     ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md shadow-green-100'
