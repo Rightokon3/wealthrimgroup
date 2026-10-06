@@ -3,10 +3,12 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { mailer } from '@/lib/mailer';
 import { sendPushToUser } from '@/lib/web-push-server';
 import { notifyAdmins } from '@/lib/notify-admins';
+import { getBaseUrl } from '@/lib/getBaseUrl';
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token');
-  const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000/').replace(/\/$/, '');
+  // Works in development AND deployment: no hard-coded localhost address
+  const baseUrl = getBaseUrl(req);
 
   if (!token) {
     return NextResponse.redirect(`${baseUrl}/auth/verify-result?status=invalid`);

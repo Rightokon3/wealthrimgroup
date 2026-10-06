@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { generateVerificationToken } from '@/lib/tokens';
 import { sendVerificationEmail } from '@/lib/mailer';
+import { getBaseUrl } from '@/lib/getBaseUrl';
 
 // Accepts a number or numeric string, returns null for anything else
 function toCoord(v: unknown, min: number, max: number): number | null {
@@ -109,7 +110,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!tokenErr) {
-      const link = `${process.env.NEXT_PUBLIC_BASE_URL}/rider/verify-email?token=${rawToken}`;
+      const link = `${getBaseUrl(req)}/rider/verify-email?token=${rawToken}`;
       try {
         await sendVerificationEmail(normalizedEmail, full_name, link);
       } catch (err) {
