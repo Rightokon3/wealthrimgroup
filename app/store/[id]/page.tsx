@@ -463,12 +463,12 @@ function StoreInner() {
                         Sign in to {meta?.orderLabel??'order'}
                       </Link>
                     ):(
-                      <Link href="/checkout"
-                        className="w-full py-3.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:from-orange-600 hover:to-red-700 shadow-lg shadow-orange-200">
-                        <ShoppingCart className="w-4 h-4"/>
-                        {meta?.orderLabel} · ₦{(subtotal+(store.category!=='real_estate'?deliveryFee:0)).toLocaleString()}
-                        <ChevronRight className="w-4 h-4 ml-auto"/>
-                      </Link>
+<Link href="/checkout"
+  className="w-full py-3.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:from-orange-600 hover:to-red-700 shadow-lg shadow-orange-200">
+  <ShoppingCart className="w-4 h-4 flex-shrink-0"/>
+  <span>{meta?.orderLabel} · ₦{(subtotal+(store.category!=='real_estate'?deliveryFee:0)).toLocaleString()}</span>
+  <ChevronRight className="w-4 h-4 flex-shrink-0"/>
+</Link>
                     )}
                     {store.category==='food'&&<p className="text-xs text-center text-gray-400 mt-2 flex items-center justify-center gap-1"><Clock className="w-3 h-3"/>{store.avg_delivery_min}–{store.avg_delivery_min+15} min delivery</p>}
                   </>

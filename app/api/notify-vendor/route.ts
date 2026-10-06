@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendOrderNotificationEmail } from '@/lib/email';
-import { sendVendorNotificationEmail } from '@/lib/mailer';
+import { sendVendorNotificationEmail, sendOrderConfirmationEmail, sendOrderStatusEmail, hasStatusEmail } from '@/lib/mailer';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendPushToUser } from '@/lib/web-push-server';
 import { notifyAdmins } from '@/lib/notify-admins';
 import { isNearby } from '@/lib/riderMatch';
+import { getBaseUrl } from '@/lib/getBaseUrl';
 
 // Where a rider lands when they tap a new-order notification. Change if yours differs.
 const RIDER_DASHBOARD_URL = '/rider/dashboard';
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
 
     if (type === 'new_order') {
       if (!body.orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 });
-      await notifyNewOrder(body.orderId);
+      await notifyNewOrder(body.orderId, getBaseUrl(req));
       return NextResponse.json({ success: true });
     }
 
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
       if (!body.orderId || !body.status) {
         return NextResponse.json({ error: 'orderId and status required' }, { status: 400 });
       }
-      await notifyOrderStatus(body.orderId, body.status);
+      await notifyOrderStatus(body.orderId, body.status, getBaseUrl(req));
       return NextResponse.json({ success: true });
     }
 
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function notifyNewOrder(orderId: string) {
+async function notifyNewOrder(orderId: string, baseUrl: string) {
   // Use the admin client (service role — bypasses RLS) to read the order
   // plus its store/vendor/customer details. This is a backend notification
   // job, not an action taken on behalf of the calling customer, and the
@@ -147,6 +148,35 @@ async function notifyNewOrder(orderId: string) {
     ]);
   }
 
+  // ── Customer: order confirmation email ───────────────────────────
+  if (order.customer_id) {
+    try {
+      const { data: cu } = await supabaseAdmin.auth.admin.getUserById(order.customer_id);
+      const customerEmail = cu?.user?.email;
+      if (customerEmail) {
+        await sendOrderConfirmationEmail(
+          customerEmail,
+          customer?.full_name ?? 'there',
+          {
+            orderNumber:     order.order_number,
+            storeName:       store?.name ?? 'the vendor',
+            items:           (order.order_items ?? []).map((i: any) => ({ name: i.name, quantity: i.quantity, subtotal: i.subtotal })),
+            subtotal:        order.subtotal,
+            deliveryFee:     order.delivery_fee ?? 0,
+            total:           order.total,
+            paymentMethod:   order.payment_method,
+            deliveryType:    order.delivery_type,
+            deliveryAddress: order.delivery_address,
+            deliveryCity:    order.delivery_city,
+          },
+          `${baseUrl}/orders`
+        );
+      }
+    } catch (err) {
+      console.error('Customer confirmation email failed:', err);
+    }
+  }
+
   // ── Riders: alert nearby online riders ───────────────────────────
   // Wrapped so a rider-notification problem can never break the vendor,
   // customer or admin notifications above and below.
@@ -218,7 +248,7 @@ async function notifyNearbyRiders(order: any, store: any) {
   );
 }
 
-async function notifyOrderStatus(orderId: string, status: string) {
+async function notifyOrderStatus(orderId: string, status: string, baseUrl: string) {
   const { data: order } = await supabaseAdmin
     .from('orders')
     .select('id, order_number, customer_id, rider_id, stores(name)')
@@ -242,6 +272,29 @@ async function notifyOrderStatus(orderId: string, status: string) {
     }),
     sendPushToUser(order.customer_id, { title, body: message, url: trackUrl }),
   ]);
+
+  // ── Customer: status update email (every change) ────────────────────
+  // Wrapped so an email problem never blocks the in-app / push notification above.
+  if (hasStatusEmail(status)) {
+    try {
+      const [{ data: cu }, { data: cp }] = await Promise.all([
+        supabaseAdmin.auth.admin.getUserById(order.customer_id),
+        supabaseAdmin.from('profiles').select('full_name').eq('id', order.customer_id).maybeSingle(),
+      ]);
+      const customerEmail = cu?.user?.email;
+      if (customerEmail) {
+        await sendOrderStatusEmail(
+          customerEmail,
+          cp?.full_name ?? 'there',
+          { orderNumber: order.order_number, storeName: (order as any).stores?.name ?? 'the vendor', status },
+          `${baseUrl}${trackUrl}`,
+          trackable ? 'Track my delivery' : 'View my order',
+        );
+      }
+    } catch (err) {
+      console.error('Customer status email failed:', err);
+    }
+  }
 
   // The assigned rider should know the moment the order is ready to collect
   const riderId = (order as any).rider_id;

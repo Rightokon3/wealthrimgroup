@@ -78,6 +78,11 @@ function CheckoutInner() {
   const [saveForLater,   setSaveForLater]   = useState(true);
   const [newLabel,       setNewLabel]       = useState('Home');
 
+  // Draft: the customer's address, pin and details survive leaving the page or a refresh
+  const draftRestored = useRef(false);
+  const orderPlaced   = useRef(false);
+  const [draftReady, setDraftReady] = useState(false);
+
   // Payment gateway state
   const [showBankModal,   setShowBankModal]   = useState(false);
   const [copiedField,     setCopiedField]     = useState<string | null>(null);
@@ -115,9 +120,56 @@ function CheckoutInner() {
 
   // ── Pre-fill from profile ─────────────────────────────────────
   useEffect(() => {
+    if (draftRestored.current) return;
     if (profile?.phone) setPhone(profile.phone);
     if (profile?.city)  setCity(profile.city);
   }, [profile]);
+
+  // ── Restore / save the checkout draft ─────────────────────────
+  const draftKey = user ? `drovo_checkout_draft_${user.id}` : null;
+
+  function clearDraft() {
+    if (!draftKey) return;
+    try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+  }
+
+  useEffect(() => {
+    if (!draftKey) return;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.address || d.customerCoords) {
+          draftRestored.current = true;
+          setAddress(d.address ?? '');
+          setCity(d.city ?? '');
+          setState(d.state ?? '');
+          if (d.phone) setPhone(d.phone);
+          setNote(d.note ?? '');
+          setScheduled(d.scheduled ?? '');
+          if (d.payment === 'cash_on_delivery' || d.payment === 'card') setPayment(d.payment);
+          setCustomerCoords(d.customerCoords ?? null);
+          setSelectedAddrId(d.selectedAddrId ?? null);
+          setShowNewAddr(!!d.showNewAddr);
+          if (typeof d.saveForLater === 'boolean') setSaveForLater(d.saveForLater);
+          if (d.newLabel) setNewLabel(d.newLabel);
+        }
+      }
+    } catch { /* ignore a corrupt draft */ }
+    setDraftReady(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!draftKey || !draftReady || orderPlaced.current) return;
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({
+        address, city, state, phone, note, scheduled,
+        payment: payment === 'transfer' ? 'cash_on_delivery' : payment,
+        customerCoords, selectedAddrId, showNewAddr, saveForLater, newLabel,
+      }));
+    } catch { /* storage full or blocked */ }
+  }, [draftKey, draftReady, address, city, state, phone, note, scheduled, payment, customerCoords, selectedAddrId, showNewAddr, saveForLater, newLabel]);
 
   // ── Load saved addresses, auto-select default ─────────────────
   useEffect(() => {
@@ -137,6 +189,7 @@ function CheckoutInner() {
           return;
         }
         setSavedAddresses(data as SavedAddress[]);
+        if (draftRestored.current) return; // keep what the customer was already working on
         const def = (data as SavedAddress[]).find(a => a.is_default) ?? (data as SavedAddress[])[0];
         applySavedAddress(def);
       });
@@ -375,6 +428,9 @@ function CheckoutInner() {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ orderId: order.id }),
     }).catch(err => console.warn('Vendor email notification failed:', err));
+
+    orderPlaced.current = true;
+    clearDraft();
 
     return order as { id: string; order_number: string };
   }
