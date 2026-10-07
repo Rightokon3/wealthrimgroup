@@ -9,7 +9,7 @@ const transporter = nodemailer.createTransport({
 });
 
 export interface OrderEmailData {
-  vendorEmail:   string;
+  vendorEmail:   string;   // one address, or several separated by commas
   vendorName:    string;
   storeName:     string;
   orderNumber:   string;
@@ -31,19 +31,40 @@ export interface OrderEmailData {
   vendorPayout: number;
   total:        number;
   paymentMethod: string;
+  paymentStatus?: string;
   deliveryType: string;
+}
+
+// Customer-typed text (name, address, note, item names) is placed inside this
+// HTML, so it must be escaped.
+function esc(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Null-safe money formatter: a missing amount renders as ₦0 instead of
+// throwing "Cannot read properties of null (reading 'toLocaleString')".
+function naira(value: unknown): string {
+  return `₦${Number(value ?? 0).toLocaleString()}`;
 }
 
 export async function sendOrderNotificationEmail(data: OrderEmailData) {
   const isRealEstate = data.deliveryType === 'viewing';
+  const method = String(data.paymentMethod ?? '');
+  const awaitingPayment = data.paymentStatus === 'pending' && method !== 'cash_on_delivery';
+  const paymentLabel = method.replace(/_/g, ' ') + (awaitingPayment ? ' (awaiting payment)' : '');
 
-  const itemsHTML = data.items.map(item => `
+  const itemsHTML = (data.items ?? []).map(item => `
     <tr>
       <td style="padding:10px 12px;border-bottom:1px solid #f3f4f6;font-size:14px;color:#374151;">
-        ${item.quantity}× ${item.name}
+        ${esc(item.quantity)}× ${esc(item.name)}
       </td>
       <td style="padding:10px 12px;border-bottom:1px solid #f3f4f6;font-size:14px;color:#111827;font-weight:700;text-align:right;">
-        ₦${item.subtotal.toLocaleString()}
+        ${naira(item.subtotal)}
       </td>
     </tr>
   `).join('');
@@ -67,7 +88,7 @@ export async function sendOrderNotificationEmail(data: OrderEmailData) {
         New ${isRealEstate ? 'Viewing Request' : 'Order'} Received!
       </h1>
       <p style="color:rgba(255,255,255,0.85);font-size:14px;margin:0;">
-        ${data.storeName} · ${data.orderNumber}
+        ${esc(data.storeName)} · ${esc(data.orderNumber)}
       </p>
     </div>
 
@@ -88,24 +109,24 @@ export async function sendOrderNotificationEmail(data: OrderEmailData) {
         <table style="width:100%;border-collapse:collapse;">
           <tr>
             <td style="padding:6px 0;font-size:13px;color:#6b7280;width:40%;">Name</td>
-            <td style="padding:6px 0;font-size:13px;color:#111827;font-weight:600;">${data.customerName}</td>
+            <td style="padding:6px 0;font-size:13px;color:#111827;font-weight:600;">${esc(data.customerName)}</td>
           </tr>
           <tr>
             <td style="padding:6px 0;font-size:13px;color:#6b7280;">Phone</td>
-            <td style="padding:6px 0;font-size:13px;color:#111827;font-weight:600;">${data.customerPhone}</td>
+            <td style="padding:6px 0;font-size:13px;color:#111827;font-weight:600;">${esc(data.customerPhone)}</td>
           </tr>
           <tr>
             <td style="padding:6px 0;font-size:13px;color:#6b7280;">${isRealEstate ? 'Location' : 'Delivery Address'}</td>
-            <td style="padding:6px 0;font-size:13px;color:#111827;font-weight:600;">${data.deliveryAddress}, ${data.deliveryCity}</td>
+            <td style="padding:6px 0;font-size:13px;color:#111827;font-weight:600;">${esc(data.deliveryAddress)}, ${esc(data.deliveryCity)}</td>
           </tr>
           ${data.deliveryNote ? `
           <tr>
             <td style="padding:6px 0;font-size:13px;color:#6b7280;">Note</td>
-            <td style="padding:6px 0;font-size:13px;color:#f97316;font-weight:600;">${data.deliveryNote}</td>
+            <td style="padding:6px 0;font-size:13px;color:#f97316;font-weight:600;">${esc(data.deliveryNote)}</td>
           </tr>` : ''}
           <tr>
             <td style="padding:6px 0;font-size:13px;color:#6b7280;">Payment</td>
-            <td style="padding:6px 0;font-size:13px;color:#111827;font-weight:600;text-transform:capitalize;">${data.paymentMethod.replace(/_/g, ' ')}</td>
+            <td style="padding:6px 0;font-size:13px;color:#111827;font-weight:600;text-transform:capitalize;">${esc(paymentLabel)}</td>
           </tr>
         </table>
       </div>
@@ -132,20 +153,20 @@ export async function sendOrderNotificationEmail(data: OrderEmailData) {
         <table style="width:100%;border-collapse:collapse;">
           <tr>
             <td style="padding:5px 0;font-size:13px;color:#15803d;">Order Subtotal</td>
-            <td style="padding:5px 0;font-size:13px;color:#111827;font-weight:600;text-align:right;">₦${data.subtotal.toLocaleString()}</td>
+            <td style="padding:5px 0;font-size:13px;color:#111827;font-weight:600;text-align:right;">${naira(data.subtotal)}</td>
           </tr>
           ${!isRealEstate ? `
           <tr>
             <td style="padding:5px 0;font-size:13px;color:#15803d;">Delivery Fee</td>
-            <td style="padding:5px 0;font-size:13px;color:#111827;font-weight:600;text-align:right;">₦${data.deliveryFee.toLocaleString()}</td>
+            <td style="padding:5px 0;font-size:13px;color:#111827;font-weight:600;text-align:right;">${naira(data.deliveryFee)}</td>
           </tr>` : ''}
           <tr>
             <td style="padding:5px 0;font-size:13px;color:#dc2626;">Drovo Fee (10%)</td>
-            <td style="padding:5px 0;font-size:13px;color:#dc2626;font-weight:600;text-align:right;">−₦${data.platformFee.toLocaleString()}</td>
+            <td style="padding:5px 0;font-size:13px;color:#dc2626;font-weight:600;text-align:right;">−${naira(data.platformFee)}</td>
           </tr>
           <tr style="border-top:2px solid #86efac;">
             <td style="padding:10px 0 0;font-size:16px;font-weight:900;color:#14532d;">You Receive</td>
-            <td style="padding:10px 0 0;font-size:18px;font-weight:900;color:#16a34a;text-align:right;">₦${data.vendorPayout.toLocaleString()}</td>
+            <td style="padding:10px 0 0;font-size:18px;font-weight:900;color:#16a34a;text-align:right;">${naira(data.vendorPayout)}</td>
           </tr>
         </table>
       </div>
@@ -160,7 +181,7 @@ export async function sendOrderNotificationEmail(data: OrderEmailData) {
 
       <!-- Footer note -->
       <p style="text-align:center;font-size:12px;color:#9ca3af;margin:0;">
-        This email was sent to ${data.vendorEmail} because you have a store on Drovo.<br/>
+        This email was sent to ${esc(data.vendorEmail)} because you have a store on Drovo.<br/>
         © ${new Date().getFullYear()} Drovo. All rights reserved.
       </p>
     </div>
