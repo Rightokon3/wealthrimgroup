@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { motion } from 'framer-motion';
-import { X, Upload, Plus, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Upload, Plus, CheckCircle, AlertCircle, Utensils, Shirt, Home, Flame } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Store, ProductCategory, StoreCategory } from '@/types';
@@ -201,8 +201,12 @@ async function loadStore() {
           )}
 
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
-            <h2 className="font-black text-gray-900">
-              {store.category === 'food' ? '🍛 Food Item Details' : store.category === 'fashion' ? '👗 Product Details' : '🏠 Property Details'}
+            <h2 className="font-black text-gray-900 flex items-center gap-2">
+              {store.category === 'food'
+                ? <><Utensils className="w-5 h-5 text-orange-500" /> Food Item Details</>
+                : store.category === 'fashion'
+                  ? <><Shirt className="w-5 h-5 text-orange-500" /> Product Details</>
+                  : <><Home className="w-5 h-5 text-orange-500" /> Property Details</>}
             </h2>
 
             <div>
@@ -268,7 +272,7 @@ async function loadStore() {
                 </div>
                 <div className="bg-red-50 rounded-xl p-3 text-center border border-red-100">
                   <div className="text-lg font-black text-red-600">₦{platformFee.toLocaleString()}</div>
-                  <div className="text-xs text-red-400 mt-0.5">AfriCart (10%)</div>
+                  <div className="text-xs text-red-400 mt-0.5">Drovo (10%)</div>
                 </div>
                 <div className="bg-green-50 rounded-xl p-3 text-center border border-green-100">
                   <div className="text-lg font-black text-green-600">₦{vendorGets.toLocaleString()}</div>
@@ -394,7 +398,7 @@ async function loadStore() {
           </div>
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center justify-between">
             <div>
-              <p className="font-bold text-gray-900 text-sm">🔥 Mark as Popular / Featured</p>
+              <p className="font-bold text-gray-900 text-sm flex items-center gap-1.5"><Flame className="w-4 h-4 text-orange-500" /> Mark as Popular / Featured</p>
               <p className="text-xs text-gray-400 mt-0.5">Shows a "Popular" badge and appears first</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">

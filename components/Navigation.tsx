@@ -5,13 +5,21 @@ import { useRouter, usePathname } from 'next/navigation';
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import {
   ShoppingCart, Menu, X, ChevronDown, LogOut,
-  User, LayoutDashboard, Package, Bike
+  User, LayoutDashboard, Package, Bike,
+  Utensils, Home, Shirt, Store, ShieldCheck, ShoppingBag
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
 import Image from 'next/image';
 import Logo from '@/public/image/Drovo-logo-2.png';
 import NotificationBell from '@/components/NotificationBell';
+
+// One list for desktop AND mobile, so the two menus can never drift apart
+const NAV_LINKS = [
+  { href: '/categories/food',    label: 'Food',        icon: Utensils },
+  { href: '/real-estate',        label: 'Real Estate', icon: Home },
+  { href: '/categories/fashion', label: 'Fashion',     icon: Shirt },
+];
 
 export default function Navigation() {
   const pathname  = usePathname();
@@ -82,19 +90,15 @@ export default function Navigation() {
 
           {/* Category nav — desktop */}
           <div className="hidden md:flex items-center gap-1">
-            {[
-              { href: '/categories/food',        label: '🍛 Food' },
-              { href: '/real-estate', label: '🏠 Real Estate' },
-              { href: '/categories/fashion',     label: '👗 Fashion' },
-            ].map(item => (
-              <Link key={item.href} href={item.href}
-                className="px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 hover:bg-orange-50 hover:text-orange-700 transition-all">
-                {item.label}
+            {NAV_LINKS.map(({ href, label, icon: Icon }) => (
+              <Link key={href} href={href}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 hover:bg-orange-50 hover:text-orange-700 transition-all">
+                <Icon className="w-4 h-4" /> {label}
               </Link>
             ))}
 
             {!isRider && (
-              <Link href={isLoggedIn && isRider ? '/rider/dashboard' : '/rider/signup'}
+              <Link href="/rider/signup"
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-green-700 bg-green-50 hover:bg-green-100 transition-all ml-1">
                 <Bike className="w-4 h-4" /> Become a Rider
               </Link>
@@ -148,16 +152,16 @@ export default function Navigation() {
                       <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
                         <p className="font-bold text-gray-900 text-sm truncate">{profile?.full_name ?? 'User'}</p>
                         <p className="text-xs text-gray-400 truncate">{user?.email}</p>
-                        <span className={`inline-flex mt-1 px-2 py-0.5 rounded-full text-xs font-bold ${
+                        <span className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-bold ${
                           isVendor ? 'bg-amber-100 text-amber-700'
                           : isRider ? 'bg-green-100 text-green-700'
                           : isAdmin ? 'bg-red-100 text-red-700'
                           : 'bg-orange-100 text-orange-700'
                         }`}>
-                          {isVendor ? '🏪 Vendor'
-                          : isRider ? '🏍️ Rider'
-                          : isAdmin ? '🛡️ Admin'
-                          : '🛒 Customer'}
+                          {isVendor ? <><Store className="w-3 h-3" /> Vendor</>
+                          : isRider ? <><Bike className="w-3 h-3" /> Rider</>
+                          : isAdmin ? <><ShieldCheck className="w-3 h-3" /> Admin</>
+                          : <><ShoppingBag className="w-3 h-3" /> Customer</>}
                         </span>
                       </div>
 
@@ -234,14 +238,10 @@ export default function Navigation() {
               className="md:hidden absolute top-16 left-0 right-0 bg-white border-b border-orange-100 shadow-xl"
             >
               <div className="px-6 py-4 space-y-1">
-                {[
-                  { href: '/categories/food',        label: '🍛 Food' },
-                  { href: '/categories/real-estate', label: '🏠 Real Estate' },
-                  { href: '/categories/fashion',     label: '👗 Fashion' },
-                ].map(item => (
-                  <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}
-                    className="block px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-600 hover:bg-orange-50 hover:text-orange-700 transition-all">
-                    {item.label}
+                {NAV_LINKS.map(({ href, label, icon: Icon }) => (
+                  <Link key={href} href={href} onClick={() => setMobileOpen(false)}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-600 hover:bg-orange-50 hover:text-orange-700 transition-all">
+                    <Icon className="w-4 h-4" /> {label}
                   </Link>
                 ))}
 
@@ -256,31 +256,31 @@ export default function Navigation() {
                   {isLoggedIn ? (<>
                     {isAdmin && (
                       <Link href="/admin" onClick={() => setMobileOpen(false)}
-                        className="block py-2.5 px-3 rounded-lg text-sm font-bold text-red-700 hover:bg-red-50">
-                        🛡️ Admin Panel
+                        className="flex items-center gap-2.5 py-2.5 px-3 rounded-lg text-sm font-bold text-red-700 hover:bg-red-50">
+                        <ShieldCheck className="w-4 h-4" /> Admin Panel
                       </Link>
                     )}
                     {isVendor && (
                       <Link href="/vendor/dashboard" onClick={() => setMobileOpen(false)}
-                        className="block py-2.5 px-3 rounded-lg text-sm font-bold text-amber-700 hover:bg-amber-50">
-                        🏪 Dashboard
+                        className="flex items-center gap-2.5 py-2.5 px-3 rounded-lg text-sm font-bold text-amber-700 hover:bg-amber-50">
+                        <Store className="w-4 h-4" /> Dashboard
                       </Link>
                     )}
                     {isRider && (
                       <Link href="/rider/dashboard" onClick={() => setMobileOpen(false)}
-                        className="block py-2.5 px-3 rounded-lg text-sm font-bold text-green-700 hover:bg-green-50">
-                        🏍️ Rider Dashboard
+                        className="flex items-center gap-2.5 py-2.5 px-3 rounded-lg text-sm font-bold text-green-700 hover:bg-green-50">
+                        <Bike className="w-4 h-4" /> Rider Dashboard
                       </Link>
                     )}
                     {!isVendor && !isRider && !isAdmin && (
                       <Link href="/orders" onClick={() => setMobileOpen(false)}
-                        className="block py-2.5 px-3 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
-                        My Orders
+                        className="flex items-center gap-2.5 py-2.5 px-3 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        <ShoppingCart className="w-4 h-4" /> My Orders
                       </Link>
                     )}
                     <button onClick={handleSignOut} disabled={signingOut}
-                      className="w-full text-left py-2.5 px-3 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
-                      {signingOut ? 'Signing out…' : 'Sign Out'}
+                      className="w-full flex items-center gap-2.5 text-left py-2.5 px-3 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
+                      <LogOut className="w-4 h-4" /> {signingOut ? 'Signing out…' : 'Sign Out'}
                     </button>
                   </>) : (<>
                     <Link href="/auth/login" onClick={() => setMobileOpen(false)}

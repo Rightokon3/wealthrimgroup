@@ -17,10 +17,11 @@ export interface Order{id:string;customer_id:string;store_id:string;order_number
 export interface OrderItem{id:string;order_id:string;product_id:string|null;name:string;price:number;quantity:number;subtotal:number;selected_size:string|null;selected_color:string|null;image_url:string|null;}
 export interface Payout{id:string;vendor_id:string;store_id:string;amount:number;platform_fee:number;order_count:number;status:PayoutStatus;paid_at:string|null;reference:string|null;notes:string|null;created_at:string;}
 export interface Review{id:string;store_id:string;customer_id:string;order_id:string|null;rating:number;comment:string|null;created_at:string;profiles?:Pick<Profile,'full_name'|'avatar_url'>;}
+// `icon` is a Lucide icon name. To render it, use getCategoryIcon(category) from '@/lib/categoryIcons'.
 export const CATEGORY_META={
-  food:{label:'Food & Delivery',icon:'🍛',color:'orange',gradient:'from-orange-500 to-red-500',deliveryLabel:'delivery',orderLabel:'Order Now',productLabel:'Menu Item',orderType:'delivery' as DeliveryType},
-  real_estate:{label:'Real Estate',icon:'🏠',color:'amber',gradient:'from-amber-500 to-yellow-500',deliveryLabel:'viewing',orderLabel:'Book Viewing',productLabel:'Property',orderType:'viewing' as DeliveryType},
-  fashion:{label:'Fashion & Fabric',icon:'👗',color:'rose',gradient:'from-rose-500 to-pink-500',deliveryLabel:'delivery',orderLabel:'Order Now',productLabel:'Item',orderType:'delivery' as DeliveryType},
+  food:{label:'Food & Delivery',icon:'UtensilsCrossed',color:'orange',gradient:'from-orange-500 to-red-500',deliveryLabel:'delivery',orderLabel:'Order Now',productLabel:'Menu Item',orderType:'delivery' as DeliveryType},
+  real_estate:{label:'Real Estate',icon:'Building2',color:'amber',gradient:'from-amber-500 to-yellow-500',deliveryLabel:'viewing',orderLabel:'Book Viewing',productLabel:'Property',orderType:'viewing' as DeliveryType},
+  fashion:{label:'Fashion & Fabric',icon:'Shirt',color:'rose',gradient:'from-rose-500 to-pink-500',deliveryLabel:'delivery',orderLabel:'Order Now',productLabel:'Item',orderType:'delivery' as DeliveryType},
 };
 
 export interface Business {

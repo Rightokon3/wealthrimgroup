@@ -166,15 +166,15 @@ export async function sendOrderConfirmationEmail(to: string, name: string, o: Or
 
 
 // ── Order status updates (sent to the customer every time the status changes) ──
-const STATUS_EMAIL: Record<string, { emoji: string; subject: string; headline: string; text: string }> = {
-  confirmed:  { emoji: '✅', subject: 'Your order has been confirmed',       headline: 'Order confirmed',       text: 'Good news! The vendor has confirmed your order and will start getting it ready.' },
-  preparing:  { emoji: '👩‍🍳', subject: 'Your order is being prepared',       headline: 'Being prepared',        text: 'The vendor is now preparing your order.' },
-  ready:      { emoji: '📦', subject: 'Your order is ready',                 headline: 'Ready for pickup',      text: 'Your order is ready. A rider will collect it shortly.' },
-  picked_up:  { emoji: '🛵', subject: 'A rider has picked up your order',    headline: 'Picked up by rider',    text: 'Your rider has collected your order from the vendor.' },
-  on_the_way: { emoji: '🚴', subject: 'Your order is on the way!',           headline: 'On the way',            text: 'Your order has been sent out for delivery. You can follow your rider live on the map.' },
-  delivered:  { emoji: '🎉', subject: 'Your order has been delivered',       headline: 'Delivered',             text: 'Your order has arrived. Enjoy! We would love to hear what you think, so please leave a review.' },
-  cancelled:  { emoji: '❌', subject: 'Your order has been cancelled',       headline: 'Order cancelled',       text: 'Your order has been cancelled. If you did not expect this, please contact the vendor or our support team.' },
-  refunded:   { emoji: '💸', subject: 'Your order has been refunded',        headline: 'Order refunded',        text: 'Your order has been refunded. It can take a little while for the money to show in your account.' },
+const STATUS_EMAIL: Record<string, { icon: string; subject: string; headline: string; text: string }> = {
+  confirmed:  { icon: '✅', subject: 'Your order has been confirmed',       headline: 'Order confirmed',       text: 'Good news! The vendor has confirmed your order and will start getting it ready.' },
+  preparing:  { icon: '👩‍🍳', subject: 'Your order is being prepared',       headline: 'Being prepared',        text: 'The vendor is now preparing your order.' },
+  ready:      { icon: '📦', subject: 'Your order is ready',                 headline: 'Ready for pickup',      text: 'Your order is ready. A rider will collect it shortly.' },
+  picked_up:  { icon: '🛵', subject: 'A rider has picked up your order',    headline: 'Picked up by rider',    text: 'Your rider has collected your order from the vendor.' },
+  on_the_way: { icon: '🚴', subject: 'Your order is on the way!',           headline: 'On the way',            text: 'Your order has been sent out for delivery. You can follow your rider live on the map.' },
+  delivered:  { icon: '🎉', subject: 'Your order has been delivered',       headline: 'Delivered',             text: 'Your order has arrived. Enjoy! We would love to hear what you think, so please leave a review.' },
+  cancelled:  { icon: '❌', subject: 'Your order has been cancelled',       headline: 'Order cancelled',       text: 'Your order has been cancelled. If you did not expect this, please contact the vendor or our support team.' },
+  refunded:   { icon: '💸', subject: 'Your order has been refunded',        headline: 'Order refunded',        text: 'Your order has been refunded. It can take a little while for the money to show in your account.' },
 };
 
 export function hasStatusEmail(status: string) {
@@ -195,7 +195,7 @@ export async function sendOrderStatusEmail(
     to,
     subject: `${c.subject} — ${o.orderNumber}`,
     html: wrapper(`
-      <div style="font-size:40px; line-height:1; margin-bottom:8px;">${c.emoji}</div>
+      <div style="font-size:40px; line-height:1; margin-bottom:8px;">${c.icon}</div>
       <h2 style="margin:0 0 4px;">${esc(c.headline)}</h2>
       <p style="margin:0 0 12px; color:#666; font-size:14px;">Hi ${esc(name)}, here is an update on your order from <strong>${esc(o.storeName)}</strong>.</p>
       <p style="font-size:15px;">${esc(c.text)}</p>

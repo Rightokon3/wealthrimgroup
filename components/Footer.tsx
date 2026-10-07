@@ -1,14 +1,22 @@
 'use client';
 import Link from 'next/link';
-import { Mail, Phone, MapPin, Bike } from 'lucide-react';
+import { Mail, Phone, MapPin, Bike, Utensils, Home, Shirt } from 'lucide-react';
 import Logo from '@/public/image/Drovo-logo-white.png';
 import Image from 'next/image';
+import { AppleIcon, GooglePlayIcon } from '@/components/icons/BrandIcons';
+
+// When the mobile apps are published, paste their store links here.
+// While a link is empty, the badge shows as "coming soon" and is not clickable.
+const APP_LINKS = {
+  ios: '',      // e.g. 'https://apps.apple.com/app/...'
+  android: '',  // e.g. 'https://play.google.com/store/apps/details?id=...'
+};
 
 const FOOTER_LINKS = {
   explore: [
-    { label: '🍛 Food & Delivery',   href: '/categories/food' },
-    { label: '🏠 Real Estate',        href: '/real-estate' },
-    { label: '👗 Fashion & Fabric',   href: '/categories/fashion' },
+    { label: 'Food & Delivery',   href: '/categories/food',    icon: Utensils },
+    { label: 'Real Estate',       href: '/real-estate',        icon: Home },
+    { label: 'Fashion & Fabric',  href: '/categories/fashion', icon: Shirt },
   ],
   vendors: [
     { label: 'Become a Vendor',       href: '/auth/signup' },
@@ -26,6 +34,29 @@ const FOOTER_LINKS = {
     { label: 'Terms of Service',      href: '/terms' },
   ],
 };
+
+function StoreBadge({ href, icon, small, name }: { href: string; icon: React.ReactNode; small: string; name: string }) {
+  const inner = (
+    <>
+      <span className="w-5 h-5 flex-shrink-0 text-white">{icon}</span>
+      <span className="leading-tight text-left">
+        <span className="block text-[9px] text-gray-400">{small}</span>
+        <span className="block text-xs font-bold text-gray-100">{name}</span>
+      </span>
+    </>
+  );
+  const cls = 'flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 transition-colors';
+
+  return href ? (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={`${cls} hover:border-orange-500`} aria-label={`${small} ${name}`}>
+      {inner}
+    </a>
+  ) : (
+    <div className={`${cls} opacity-70 cursor-default`} title="Coming soon" aria-label={`${name} (coming soon)`}>
+      {inner}
+    </div>
+  );
+}
 
 export default function Footer() {
   return (
@@ -62,9 +93,11 @@ export default function Footer() {
           <div>
             <h3 className="font-bold text-white mb-4 text-sm uppercase tracking-wider">Explore</h3>
             <ul className="space-y-2.5 text-sm text-gray-400">
-              {FOOTER_LINKS.explore.map(({ label, href }) => (
+              {FOOTER_LINKS.explore.map(({ label, href, icon: Icon }) => (
                 <li key={href}>
-                  <Link href={href} className="hover:text-orange-400 transition-colors">{label}</Link>
+                  <Link href={href} className="inline-flex items-center gap-2 hover:text-orange-400 transition-colors">
+                    <Icon className="w-4 h-4 text-orange-500 flex-shrink-0" /> {label}
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -102,13 +135,9 @@ export default function Footer() {
             </Link>
 
             {/* App badges */}
-            <div className="mt-5 flex gap-2">
-              <div className="px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:border-orange-500 transition-colors cursor-pointer">
-                🍎 App Store
-              </div>
-              <div className="px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300 hover:border-orange-500 transition-colors cursor-pointer">
-                🤖 Google Play
-              </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <StoreBadge href={APP_LINKS.ios}     icon={<AppleIcon className="w-5 h-5" />}      small="Download on the" name="App Store" />
+              <StoreBadge href={APP_LINKS.android} icon={<GooglePlayIcon className="w-5 h-5" />} small="Get it on"       name="Google Play" />
             </div>
           </div>
         </div>

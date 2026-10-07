@@ -19,8 +19,33 @@ interface Props {
 
 // Google-Maps style blue dot with a pulsing ring (styled by the CSS below)
 const riderIcon = L.divIcon({ className: 'drovo-rider', iconSize: [22, 22], iconAnchor: [11, 11] });
-const homeIcon  = L.divIcon({ className: '', html: '<div style="font-size:28px;line-height:28px">🏠</div>', iconSize: [28, 28], iconAnchor: [14, 24] });
-const storeIcon = L.divIcon({ className: '', html: '<div style="font-size:24px;line-height:24px">🏪</div>', iconSize: [24, 24], iconAnchor: [12, 20] });
+
+// Leaflet markers are plain HTML, so the Lucide icons are inlined as SVG paths
+// (same geometry as lucide's `house` and `store` icons) inside a round badge.
+const LUCIDE_HOME = '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>';
+const LUCIDE_STORE =
+  '<path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/>' +
+  '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>' +
+  '<path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/>' +
+  '<path d="M2 7h20"/>' +
+  '<path d="M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/>';
+
+function badgeIcon(svgInner: string, background: string, size = 36) {
+  return L.divIcon({
+    className: '',
+    html:
+      `<div style="width:${size}px;height:${size}px;box-sizing:border-box;border-radius:9999px;` +
+      `background:${background};border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);` +
+      `display:flex;align-items:center;justify-content:center">` +
+      `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" ` +
+      `stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svgInner}</svg></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+const homeIcon  = badgeIcon(LUCIDE_HOME,  '#ea580c'); // customer's pin (orange)
+const storeIcon = badgeIcon(LUCIDE_STORE, '#111827'); // vendor (dark)
 
 const CSS = `
 .drovo-rider{position:relative}

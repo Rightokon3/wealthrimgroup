@@ -24,6 +24,13 @@ type Tab = 'profile' | 'orders' | 'reviews' | 'addresses' | 'settings';
 
 const EMPTY_ADDR = { label: 'Home', address: '', city: '', state: '' };
 
+// Lucide icon for each address label (replaces the emoji)
+const LABEL_ICONS: Record<string, React.ReactNode> = {
+  Home:  <Home className="w-3.5 h-3.5" />,
+  Work:  <Briefcase className="w-3.5 h-3.5" />,
+  Other: <MapPin className="w-3.5 h-3.5" />,
+};
+
 export default function AccountPage() {
   const router = useRouter();
   const { user, profile, isLoggedIn, loading: al, updateProfile } = useAuth();
@@ -141,7 +148,9 @@ export default function AccountPage() {
             <div>
               <h1 className="text-2xl font-black">{profile?.full_name ?? 'Customer'}</h1>
               <p className="text-orange-100 text-sm">{user?.email}</p>
-              <span className="inline-flex mt-1.5 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-bold">🛒 Customer</span>
+              <span className="inline-flex items-center gap-1.5 mt-1.5 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-bold">
+                <ShoppingCart className="w-3 h-3" />Customer
+              </span>
             </div>
           </div>
         </div>
@@ -283,8 +292,8 @@ export default function AccountPage() {
                     <div className="flex gap-2">
                       {['Home', 'Work', 'Other'].map(l => (
                         <button key={l} type="button" onClick={() => setAddrForm(f => ({ ...f, label: l }))}
-                          className={`flex-1 py-2 rounded-xl border text-xs font-bold transition-all ${addrForm.label === l ? 'bg-orange-500 text-white border-orange-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'}`}>
-                          {l === 'Home' ? '🏠' : l === 'Work' ? '💼' : '📍'} {l}
+                          className={`flex-1 py-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${addrForm.label === l ? 'bg-orange-500 text-white border-orange-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'}`}>
+                          {LABEL_ICONS[l]}{l}
                         </button>
                       ))}
                     </div>

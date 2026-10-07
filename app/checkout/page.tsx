@@ -7,7 +7,8 @@ import {
   MapPin, Phone, ShoppingCart, ChevronRight, CreditCard,
   Banknote, Smartphone, CheckCircle, AlertCircle,
   Shield, Calendar, Navigation, Plus, Minus, Trash2, X, Copy, Clock,
-  Bike, Car, Search, UserRound, Loader2, Home, Briefcase
+  Bike, Car, Search, UserRound, Loader2, Home, Briefcase,
+  Check, Building2, PartyPopper
 } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -48,6 +49,13 @@ interface TransferAccount {
 }
 
 const RIDER_ETA_MIN = 20; // fixed — no live GPS to compute a real ETA yet
+
+// Lucide icon for each address label (replaces the emoji)
+const LABEL_ICONS: Record<string, React.ReactNode> = {
+  Home:  <Home className="w-3.5 h-3.5" />,
+  Work:  <Briefcase className="w-3.5 h-3.5" />,
+  Other: <MapPin className="w-3.5 h-3.5" />,
+};
 
 function CheckoutInner() {
   const router  = useRouter();
@@ -602,8 +610,11 @@ function CheckoutInner() {
           className="w-24 h-24 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-green-200">
           <CheckCircle className="w-12 h-12 text-white" />
         </motion.div>
-        <h2 className="text-3xl font-black text-gray-900 mb-2">
-          {isRealEstate ? 'Viewing Booked! 🏠' : 'Order Placed! 🎉'}
+        <h2 className="text-3xl font-black text-gray-900 mb-2 flex items-center justify-center gap-2">
+          {isRealEstate ? 'Viewing Booked!' : 'Order Placed!'}
+          {isRealEstate
+            ? <Home className="w-7 h-7 text-orange-500" />
+            : <PartyPopper className="w-7 h-7 text-orange-500" />}
         </h2>
         <p className="text-gray-500 mb-5">
           {isRealEstate ? 'Your viewing request has been sent to' : 'Your order has been sent to'}{' '}
@@ -929,7 +940,7 @@ function CheckoutInner() {
                           </div>
                           {active && (
                             <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-orange-500 flex items-center justify-center shadow">
-                              <span className="text-white text-xs font-black">✓</span>
+                              <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />
                             </div>
                           )}
                         </button>
@@ -1003,8 +1014,8 @@ function CheckoutInner() {
                         <div className="flex gap-2 mt-3">
                           {['Home', 'Work', 'Other'].map(l => (
                             <button key={l} type="button" onClick={() => setNewLabel(l)}
-                              className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all ${newLabel === l ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>
-                              {l === 'Home' ? '🏠' : l === 'Work' ? '💼' : '📍'} {l}
+                              className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${newLabel === l ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>
+                              {LABEL_ICONS[l]}{l}
                             </button>
                           ))}
                         </div>
@@ -1080,8 +1091,10 @@ function CheckoutInner() {
                       <div className="h-full rounded-full bg-gradient-to-r from-green-500 to-red-500 transition-all duration-500"
                         style={{ width: `${Math.min(100, ((deliveryFee - 500) / 2500) * 100)}%` }} />
                     </div>
-                    <p className="text-xs text-gray-400 mt-1 text-center">
-                      {customerCoords ? '📍 Based on your pinned location' : '🏙 Based on city distance — pin your location for a more accurate fee'}
+                    <p className="text-xs text-gray-400 mt-1 flex items-center justify-center gap-1 text-center">
+                      {customerCoords
+                        ? <><MapPin className="w-3 h-3 flex-shrink-0" />Based on your pinned location</>
+                        : <><Building2 className="w-3 h-3 flex-shrink-0" />Based on city distance — pin your location for a more accurate fee</>}
                     </p>
                   </div>
                 </motion.div>
@@ -1130,7 +1143,11 @@ function CheckoutInner() {
                         onChange={() => handlePaymentChange(opt.value as PaymentMethod)} className="sr-only" />
                       <div className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center flex-shrink-0">{opt.icon}</div>
                       <div className="flex-1"><div className="font-bold text-gray-900 text-sm">{opt.label}</div><div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div></div>
-                      {payment === opt.value && <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0"><span className="text-white text-xs font-black">✓</span></div>}
+                      {payment === opt.value && (
+                        <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0">
+                          <Check className="w-3 h-3 text-white" strokeWidth={3} />
+                        </div>
+                      )}
                     </label>
                   ))}
                 </div>

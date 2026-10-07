@@ -41,7 +41,9 @@ export default function RealEstateLandingPage() {
       <div className="relative bg-gradient-to-br from-amber-500 via-orange-500 to-orange-600 text-white pt-[64px] overflow-hidden">
         <div className="max-w-[1000px] mx-auto px-6 py-16 text-center relative z-10">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-            <div className="text-5xl mb-4">🏠</div>
+            <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center">
+              <Home className="w-8 h-8 text-white" strokeWidth={1.75} />
+            </div>
             <h1 className="text-3xl md:text-5xl font-black mb-4">Drovo Real Estate</h1>
             <p className="text-white/85 text-base md:text-lg max-w-2xl mx-auto leading-relaxed">
               A trusted real estate arm of Drovo, connecting buyers, renters and tenants

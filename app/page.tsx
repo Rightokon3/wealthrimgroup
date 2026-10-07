@@ -5,9 +5,10 @@ import { motion } from 'framer-motion';
 import {
   Search, MapPin, Clock, Star, ChevronRight, ShoppingCart,
   Utensils, Home as HomeIcon, Shirt, Shield, Zap, TrendingUp,
-  ArrowRight, Store as StoreIcon,
+  ArrowRight, Store as StoreIcon, Rocket,
   Bike
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Store, CATEGORY_META, StoreCategory } from '@/types';
 import { useCart } from '@/contexts/CartContext';
@@ -18,19 +19,26 @@ import SearchBar from '@/components/SearchBar';
 
 
 
-const CATEGORIES: { value: StoreCategory; emoji: string; label: string; bg: string; text: string }[] = [
-  { value:'food',        emoji:'🍛', label:'Food & Delivery',  bg:'bg-orange-50 border-orange-200', text:'text-orange-700' },
-  { value:'real_estate', emoji:'🏠', label:'Real Estate',       bg:'bg-amber-50 border-amber-200',   text:'text-amber-700' },
-  { value:'fashion',     emoji:'👗', label:'Fashion & Fabric',  bg:'bg-rose-50 border-rose-200',     text:'text-rose-700' },
+const CATEGORIES: { value: StoreCategory; icon: LucideIcon; label: string; bg: string; text: string }[] = [
+  { value:'food',        icon: Utensils,  label:'Food & Delivery',  bg:'bg-orange-50 border-orange-200', text:'text-orange-700' },
+  { value:'real_estate', icon: HomeIcon,  label:'Real Estate',       bg:'bg-amber-50 border-amber-200',   text:'text-amber-700' },
+  { value:'fashion',     icon: Shirt,     label:'Fashion & Fabric',  bg:'bg-rose-50 border-rose-200',     text:'text-rose-700' },
 ];
+
+// Icon shown on a store card that has no cover photo
+const CATEGORY_ICON: Record<StoreCategory, LucideIcon> = {
+  food:        Utensils,
+  real_estate: HomeIcon,
+  fashion:     Shirt,
+};
 
 const CITIES = ['Lagos','Abuja','Port Harcourt','Ibadan','Kano','Accra','Nairobi'];
 
-const STATS = [
+const STATS: { value: string; label: string; star?: boolean }[] = [
   { value: '400+', label: 'Active Vendors' },
   { value: '12K+', label: 'Happy Customers' },
   { value: '6', label: 'African Cities' },
-  { value: '4.8★', label: 'Average Rating' },
+  { value: '4.8', label: 'Average Rating', star: true },
 ];
 
 const HERO_IMAGES = [
@@ -41,13 +49,14 @@ const HERO_IMAGES = [
 
 function StoreCard({ store }: { store: Store }) {
   const meta = CATEGORY_META[store.category];
+  const FallbackIcon = CATEGORY_ICON[store.category] ?? StoreIcon;
   return (
     <Link href={`/store/${store.id}`}>
       <div className="group bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-xl hover:shadow-orange-100/60 transition-all duration-300 hover:-translate-y-1 cursor-pointer">
         <div className="relative h-40 overflow-hidden">
           {store.cover_url
             ? <img src={store.cover_url} alt={store.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"/>
-            : <div className={`w-full h-full bg-gradient-to-br ${meta.gradient} flex items-center justify-center text-5xl`}>{meta.icon}</div>
+            : <div className={`w-full h-full bg-gradient-to-br ${meta.gradient} flex items-center justify-center`}><FallbackIcon className="w-14 h-14 text-white/90"/></div>
           }
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"/>
           {!store.is_open && (
@@ -185,7 +194,10 @@ export default function HomePage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {STATS.map(stat => (
               <div key={stat.label} className="text-center">
-                <div className="text-3xl font-black">{stat.value}</div>
+                <div className="text-3xl font-black flex items-center justify-center gap-1">
+                  {stat.value}
+                  {stat.star && <Star className="w-6 h-6 fill-amber-300 text-amber-300" />}
+                </div>
                 <div className="text-orange-100 text-sm font-medium">{stat.label}</div>
               </div>
             ))}
@@ -256,7 +268,7 @@ export default function HomePage() {
           {CATEGORIES.map(c=>(
             <button key={c.value} onClick={()=>setActiveCat(c.value)}
               className={`flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-black border-2 transition-all ${activeCat===c.value?`${c.bg} ${c.text} border-current shadow-md`:`bg-white text-gray-600 border-gray-200 hover:${c.bg}`}`}>
-              <span>{c.emoji}</span>{c.label}
+              <c.icon className="w-4 h-4" />{c.label}
             </button>
           ))}
         </div>
@@ -264,12 +276,12 @@ export default function HomePage() {
         {/* Stats bar */}
         <div className="grid grid-cols-3 gap-4 mb-8">
           {[
-            { icon:'🍛', label:'Food Vendors', value:stores.filter(s=>s.category==='food').length },
-            { icon:'🏠', label:'Properties',   value:stores.filter(s=>s.category==='real_estate').length },
-            { icon:'👗', label:'Fashion Shops',value:stores.filter(s=>s.category==='fashion').length },
+            { icon: Utensils, label:'Food Vendors',  value:stores.filter(s=>s.category==='food').length },
+            { icon: HomeIcon, label:'Properties',    value:stores.filter(s=>s.category==='real_estate').length },
+            { icon: Shirt,    label:'Fashion Shops', value:stores.filter(s=>s.category==='fashion').length },
           ].map(s=>(
             <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4 text-center shadow-sm">
-              <div className="text-2xl mb-1">{s.icon}</div>
+              <s.icon className="w-6 h-6 text-orange-500 mx-auto mb-1.5" />
               <div className="text-xl font-black text-gray-900">{s.value}</div>
               <div className="text-xs text-gray-400 font-medium">{s.label}</div>
             </div>
@@ -315,13 +327,15 @@ export default function HomePage() {
   </div>
   <div className="grid md:grid-cols-3 gap-6">
     {[
-      { step:'01', icon:'🔍', title:'Browse & Discover', desc:'Find food, properties and fashion from verified local vendors in your city.' },
-      { step:'02', icon:'🛒', title:'Add & Order',       desc:'Add items to your cart and checkout with your delivery address.' },
-      { step:'03', icon:'🚀', title:'Track & Receive',   desc:'Track your order in real-time and receive it at your doorstep.' },
+      { step:'01', icon: Search,       title:'Browse & Discover', desc:'Find food, properties and fashion from verified local vendors in your city.' },
+      { step:'02', icon: ShoppingCart, title:'Add & Order',       desc:'Add items to your cart and checkout with your delivery address.' },
+      { step:'03', icon: Rocket,       title:'Track & Receive',   desc:'Track your order in real-time and receive it at your doorstep.' },
     ].map((s, i) => (
       <div key={i} className="relative bg-gray-900 rounded-2xl p-6 border border-gray-800">
         <div className="text-5xl font-black text-gray-800 absolute top-4 right-5 leading-none">{s.step}</div>
-        <div className="text-3xl mb-4">{s.icon}</div>
+        <div className="w-12 h-12 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center mb-4">
+          <s.icon className="w-6 h-6 text-orange-400" />
+        </div>
         <h3 className="text-lg font-black mb-2">{s.title}</h3>
         <p className="text-gray-400 text-sm leading-relaxed">{s.desc}</p>
       </div>
@@ -375,7 +389,9 @@ export default function HomePage() {
 {/* Rider CTA — visible to everyone who isn't a rider */}
 {profile?.role !== 'rider' && (
   <div className="mt-8 bg-gradient-to-r from-green-600 to-emerald-600 rounded-3xl p-8 text-center text-white">
-    <div className="text-4xl mb-3">🏍️</div>
+    <div className="w-14 h-14 rounded-2xl bg-white/15 flex items-center justify-center mx-auto mb-3">
+      <Bike className="w-7 h-7" />
+    </div>
     <h2 className="text-2xl md:text-3xl font-black mb-3">Earn money as a Rider</h2>
     <p className="text-green-100 mb-6 max-w-xl mx-auto text-sm">
       Join our delivery network and earn on your schedule. Motorcycles, bicycles and cars welcome.

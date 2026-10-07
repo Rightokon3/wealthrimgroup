@@ -60,7 +60,9 @@ export async function sendOrderNotificationEmail(data: OrderEmailData) {
 
     <!-- Header -->
     <div style="background:linear-gradient(135deg,#f97316,#dc2626);border-radius:20px 20px 0 0;padding:32px;text-align:center;">
-      <div style="font-size:36px;margin-bottom:8px;">${isRealEstate ? '🏠' : '🛍️'}</div>
+      <p style="color:rgba(255,255,255,0.85);font-size:12px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin:0 0 10px;">
+        Drovo
+      </p>
       <h1 style="color:white;font-size:24px;font-weight:900;margin:0 0 6px;">
         New ${isRealEstate ? 'Viewing Request' : 'Order'} Received!
       </h1>
@@ -73,14 +75,11 @@ export async function sendOrderNotificationEmail(data: OrderEmailData) {
     <div style="background:white;padding:32px;border-radius:0 0 20px 20px;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
 
       <!-- Alert banner -->
-      <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:16px;margin-bottom:24px;display:flex;align-items:center;gap:12px;">
-        <span style="font-size:20px;">🔔</span>
-        <div>
-          <p style="margin:0;font-weight:700;color:#9a3412;font-size:14px;">Action Required</p>
-          <p style="margin:4px 0 0;color:#c2410c;font-size:13px;">
-            Please confirm this ${isRealEstate ? 'viewing request' : 'order'} as soon as possible.
-          </p>
-        </div>
+      <div style="background:#fff7ed;border:1px solid #fed7aa;border-left:4px solid #f97316;border-radius:12px;padding:16px;margin-bottom:24px;">
+        <p style="margin:0;font-weight:700;color:#9a3412;font-size:14px;">Action Required</p>
+        <p style="margin:4px 0 0;color:#c2410c;font-size:13px;">
+          Please confirm this ${isRealEstate ? 'viewing request' : 'order'} as soon as possible.
+        </p>
       </div>
 
       <!-- Customer details -->
@@ -129,7 +128,7 @@ export async function sendOrderNotificationEmail(data: OrderEmailData) {
 
       <!-- Payout breakdown -->
       <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin-bottom:24px;">
-        <h2 style="font-size:16px;font-weight:900;color:#14532d;margin:0 0 12px;">💰 Your Earnings</h2>
+        <h2 style="font-size:16px;font-weight:900;color:#14532d;margin:0 0 12px;">Your Earnings</h2>
         <table style="width:100%;border-collapse:collapse;">
           <tr>
             <td style="padding:5px 0;font-size:13px;color:#15803d;">Order Subtotal</td>
@@ -173,7 +172,7 @@ export async function sendOrderNotificationEmail(data: OrderEmailData) {
   await transporter.sendMail({
     from:    `"Drovo Marketplace" <${process.env.GMAIL_USER}>`,
     to:      data.vendorEmail,
-    subject: `🛍️ New ${isRealEstate ? 'Viewing Request' : 'Order'} — ${data.orderNumber} · ${data.storeName}`,
+    subject: `New ${isRealEstate ? 'Viewing Request' : 'Order'} — ${data.orderNumber} · ${data.storeName}`,
     html,
   });
 }

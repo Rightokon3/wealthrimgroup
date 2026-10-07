@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   Search, MapPin, Star, Clock, Package, BedDouble, Bath,
-  Maximize2, Tag, ShoppingBag
+  Maximize2, Tag, ShoppingBag, Flame, UtensilsCrossed, Building2, Shirt,
+  type LucideIcon,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Product, Store, StoreCategory, CATEGORY_META } from '@/types';
@@ -16,8 +17,20 @@ interface ProductWithStore extends Product {
 
 const CITIES = ['Lagos','Abuja','Port Harcourt','Ibadan','Kano','Accra','Nairobi'];
 
+// Lucide icons per category (replaces the emoji in CATEGORY_META.icon)
+const CATEGORY_ICONS: Partial<Record<StoreCategory, LucideIcon>> = {
+  food:        UtensilsCrossed,
+  real_estate: Building2,
+  fashion:     Shirt,
+};
+
+function getCategoryIcon(category: StoreCategory): LucideIcon {
+  return CATEGORY_ICONS[category] ?? ShoppingBag;
+}
+
 export default function CategoryProductGrid({ category }: { category: StoreCategory }) {
   const meta = CATEGORY_META[category];
+  const CategoryIcon = getCategoryIcon(category);
 
   const [products, setProducts] = useState<ProductWithStore[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -65,7 +78,9 @@ export default function CategoryProductGrid({ category }: { category: StoreCateg
       <div className={`relative bg-gradient-to-br ${meta.gradient} text-white pt-[64px]`}>
         <div className="max-w-[1200px] mx-auto px-6 py-12 text-center">
           <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{duration:.5}}>
-            <div className="text-5xl mb-3">{meta.icon}</div>
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center">
+              <CategoryIcon className="w-8 h-8 text-white" strokeWidth={1.75}/>
+            </div>
             <h1 className="text-3xl md:text-5xl font-black mb-2">{meta.label}</h1>
             <p className="text-white/80 text-base mb-7">
               {category==='food' && 'Browse menu items from every restaurant near you'}
@@ -140,6 +155,7 @@ export default function CategoryProductGrid({ category }: { category: StoreCateg
 
 function ProductCard({ product, category }: { product: ProductWithStore; category: StoreCategory }) {
   const meta = CATEGORY_META[category];
+  const CategoryIcon = getCategoryIcon(category);
   const store = product.stores;
 
   return (
@@ -149,11 +165,17 @@ function ProductCard({ product, category }: { product: ProductWithStore; categor
         <div className="relative h-40 overflow-hidden flex-shrink-0">
           {product.image_url
             ? <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"/>
-            : <div className={`w-full h-full bg-gradient-to-br ${meta.gradient} flex items-center justify-center text-4xl`}>{meta.icon}</div>
+            : (
+              <div className={`w-full h-full bg-gradient-to-br ${meta.gradient} flex items-center justify-center`}>
+                <CategoryIcon className="w-10 h-10 text-white/90" strokeWidth={1.5}/>
+              </div>
+            )
           }
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent"/>
           {product.is_featured && (
-            <span className="absolute top-3 left-3 bg-orange-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">🔥 Featured</span>
+            <span className="absolute top-3 left-3 inline-flex items-center gap-1 bg-orange-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+              <Flame className="w-3 h-3"/>Featured
+            </span>
           )}
           {!store.is_open && (
             <span className="absolute top-3 right-3 bg-black/70 text-white text-xs font-bold px-2 py-0.5 rounded-full">Store Closed</span>
