@@ -57,7 +57,7 @@ export default function OrdersPage() {
         { event: 'UPDATE', schema: 'public', table: 'orders', filter: `customer_id=eq.${user.id}` },
         payload => {
           const row = payload.new as any;
-          setOrders(prev => prev.map(o => o.id === row.id ? { ...o, status: row.status, rider_id: row.rider_id } as Order : o));
+          setOrders(prev => prev.map(o => o.id === row.id ? { ...o, status: row.status, rider_id: row.rider_id, refund_status: row.refund_status, refund_amount: row.refund_amount, cancel_reason: row.cancel_reason, cancelled_by: row.cancelled_by } as Order : o));
 
           if (TRACKABLE.includes(row.status) && row.delivery_type === 'delivery' && !prompted.current.has(row.id)) {
             prompted.current.add(row.id);
@@ -208,6 +208,25 @@ export default function OrdersPage() {
                   </div>
                 )}
               </div>
+
+              {order.status==='cancelled' && (() => {
+                const o: any = order;
+                const paid = o.refund_amount != null;
+                const bad = ['failed','needs_attention'].includes(o.refund_status);
+                const done = o.refund_status==='processed';
+                return (
+                  <div className={`mx-5 mb-5 rounded-xl border p-4 text-sm ${!paid ? 'bg-gray-50 border-gray-200 text-gray-700' : bad ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-green-50 border-green-200 text-green-800'}`}>
+                    <p className="font-bold">
+                      {!paid ? 'This order was cancelled. You were not charged.'
+                        : bad ? `This order was cancelled. Your ₦${Number(o.refund_amount).toLocaleString()} refund is being arranged by our team.`
+                        : done ? `Your order was cancelled and ₦${Number(o.refund_amount).toLocaleString()} has been refunded to you.`
+                        : `Your order was cancelled and we have refunded ₦${Number(o.refund_amount).toLocaleString()} back to you.`}
+                    </p>
+                    {paid && !bad && <p className="text-xs mt-1 opacity-80">The full amount, including delivery, goes back to the card or bank account you paid with. It can take a few working days to show.</p>}
+                    {o.cancel_reason && <p className="text-xs mt-1 opacity-80">Reason: {o.cancel_reason}</p>}
+                  </div>
+                );
+              })()}
 
               {/* Expanded details */}
               {isOpen && (

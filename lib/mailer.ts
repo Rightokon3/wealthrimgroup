@@ -166,15 +166,15 @@ export async function sendOrderConfirmationEmail(to: string, name: string, o: Or
 
 
 // ── Order status updates (sent to the customer every time the status changes) ──
-const STATUS_EMAIL: Record<string, { icon: string; subject: string; headline: string; text: string }> = {
-  confirmed:  { icon: '✅', subject: 'Your order has been confirmed',       headline: 'Order confirmed',       text: 'Good news! The vendor has confirmed your order and will start getting it ready.' },
-  preparing:  { icon: '👩‍🍳', subject: 'Your order is being prepared',       headline: 'Being prepared',        text: 'The vendor is now preparing your order.' },
-  ready:      { icon: '📦', subject: 'Your order is ready',                 headline: 'Ready for pickup',      text: 'Your order is ready. A rider will collect it shortly.' },
-  picked_up:  { icon: '🛵', subject: 'A rider has picked up your order',    headline: 'Picked up by rider',    text: 'Your rider has collected your order from the vendor.' },
-  on_the_way: { icon: '🚴', subject: 'Your order is on the way!',           headline: 'On the way',            text: 'Your order has been sent out for delivery. You can follow your rider live on the map.' },
-  delivered:  { icon: '🎉', subject: 'Your order has been delivered',       headline: 'Delivered',             text: 'Your order has arrived. Enjoy! We would love to hear what you think, so please leave a review.' },
-  cancelled:  { icon: '❌', subject: 'Your order has been cancelled',       headline: 'Order cancelled',       text: 'Your order has been cancelled. If you did not expect this, please contact the vendor or our support team.' },
-  refunded:   { icon: '💸', subject: 'Your order has been refunded',        headline: 'Order refunded',        text: 'Your order has been refunded. It can take a little while for the money to show in your account.' },
+const STATUS_EMAIL: Record<string, { emoji: string; subject: string; headline: string; text: string }> = {
+  confirmed:  { emoji: '✅', subject: 'Your order has been confirmed',       headline: 'Order confirmed',       text: 'Good news! The vendor has confirmed your order and will start getting it ready.' },
+  preparing:  { emoji: '👩‍🍳', subject: 'Your order is being prepared',       headline: 'Being prepared',        text: 'The vendor is now preparing your order.' },
+  ready:      { emoji: '📦', subject: 'Your order is ready',                 headline: 'Ready for pickup',      text: 'Your order is ready. A rider will collect it shortly.' },
+  picked_up:  { emoji: '🛵', subject: 'A rider has picked up your order',    headline: 'Picked up by rider',    text: 'Your rider has collected your order from the vendor.' },
+  on_the_way: { emoji: '🚴', subject: 'Your order is on the way!',           headline: 'On the way',            text: 'Your order has been sent out for delivery. You can follow your rider live on the map.' },
+  delivered:  { emoji: '🎉', subject: 'Your order has been delivered',       headline: 'Delivered',             text: 'Your order has arrived. Enjoy! We would love to hear what you think, so please leave a review.' },
+  cancelled:  { emoji: '❌', subject: 'Your order has been cancelled',       headline: 'Order cancelled',       text: 'Your order has been cancelled. If you did not expect this, please contact the vendor or our support team.' },
+  refunded:   { emoji: '💸', subject: 'Your order has been refunded',        headline: 'Order refunded',        text: 'Your order has been refunded. It can take a little while for the money to show in your account.' },
 };
 
 export function hasStatusEmail(status: string) {
@@ -195,7 +195,7 @@ export async function sendOrderStatusEmail(
     to,
     subject: `${c.subject} — ${o.orderNumber}`,
     html: wrapper(`
-      <div style="font-size:40px; line-height:1; margin-bottom:8px;">${c.icon}</div>
+      <div style="font-size:40px; line-height:1; margin-bottom:8px;">${c.emoji}</div>
       <h2 style="margin:0 0 4px;">${esc(c.headline)}</h2>
       <p style="margin:0 0 12px; color:#666; font-size:14px;">Hi ${esc(name)}, here is an update on your order from <strong>${esc(o.storeName)}</strong>.</p>
       <p style="font-size:15px;">${esc(c.text)}</p>
@@ -203,6 +203,69 @@ export async function sendOrderStatusEmail(
       <p style="font-family:monospace; font-weight:700; margin:2px 0 0;">${esc(o.orderNumber)}</p>
       ${button(link, linkLabel)}
       <p style="color:#999; font-size:12px;">You are receiving this because you placed an order on Drovo.</p>
+    `),
+  });
+}
+
+
+// ── Order cancelled (+ refund) ────────────────────────────────────────────
+export async function sendOrderCancelledEmail(
+  to: string,
+  name: string,
+  o: {
+    orderNumber: string;
+    storeName: string;
+    reason?: string | null;
+    refundAmount: number | null;      // null = nothing was paid, so nothing to refund
+    refundStatus: string | null;
+    cancelledBy: string;
+  },
+  ordersUrl: string,
+) {
+  const who = o.cancelledBy === 'customer' ? 'You cancelled this order.' : 'We are sorry, this order was cancelled.';
+  const refundOk = ['pending', 'processing', 'processed'].includes(o.refundStatus ?? '');
+
+  const refundBlock = o.refundAmount == null
+    ? `<p style="font-size:14px;">You were not charged for this order.</p>`
+    : refundOk
+      ? `<div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:14px 16px; margin:16px 0;">
+           <p style="margin:0; font-weight:700; color:#166534;">Refund started: ${naira(o.refundAmount)}</p>
+           <p style="margin:6px 0 0; font-size:13px; color:#166534;">The full amount, including delivery, is going back to the same card or bank account you paid with. It can take a few working days to show.</p>
+         </div>`
+      : `<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:14px 16px; margin:16px 0;">
+           <p style="margin:0; font-weight:700; color:#92400e;">Your refund of ${naira(o.refundAmount)} is being arranged</p>
+           <p style="margin:6px 0 0; font-size:13px; color:#92400e;">Our team will process it shortly. You do not need to do anything.</p>
+         </div>`;
+
+  await send({
+    to,
+    subject: `Order ${o.orderNumber} cancelled${o.refundAmount != null ? ' and refund started' : ''}`,
+    html: wrapper(`
+      <h2 style="margin-bottom:4px;">Order cancelled</h2>
+      <p style="color:#666; font-size:14px; margin:0 0 12px;">Hi ${esc(name)}, ${esc(who)}</p>
+      <p style="font-size:14px; margin:0;">Order <strong style="font-family:monospace;">${esc(o.orderNumber)}</strong> from <strong>${esc(o.storeName)}</strong>.</p>
+      ${o.reason ? `<p style="font-size:14px; margin:8px 0 0;"><strong>Reason:</strong> ${esc(o.reason)}</p>` : ''}
+      ${refundBlock}
+      ${button(ordersUrl, 'View my orders')}
+    `),
+  });
+}
+
+export async function sendRefundProcessedEmail(
+  to: string,
+  name: string,
+  o: { orderNumber: string; amount: number },
+  ordersUrl: string,
+) {
+  await send({
+    to,
+    subject: `Your refund for order ${o.orderNumber} has been processed`,
+    html: wrapper(`
+      <h2 style="margin-bottom:4px;">Refund processed</h2>
+      <p style="color:#666; font-size:14px;">Hi ${esc(name)}, your refund of <strong>${naira(o.amount)}</strong> for order
+        <strong style="font-family:monospace;">${esc(o.orderNumber)}</strong> has been processed and sent back to the card or bank account you paid with.
+        Depending on your bank, it may take a few working days to appear.</p>
+      ${button(ordersUrl, 'View my orders')}
     `),
   });
 }

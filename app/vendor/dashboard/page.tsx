@@ -99,6 +99,24 @@ export default function VendorDashboard() {
     setProducts(p => p.map(x => x.id === id ? { ...x, is_available: !cur } : x));
   }
 
+  async function cancelOrder(id: string, paid: boolean) {
+    const reason = window.prompt(
+      paid
+        ? 'Why are you cancelling? The customer will be refunded in full automatically.'
+        : 'Why are you cancelling this order?'
+    );
+    if (reason === null) return; // pressed Cancel on the prompt
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch('/api/orders/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}` },
+      body: JSON.stringify({ orderId: id, reason }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(j.error ?? 'Could not cancel the order. Try again.'); return; }
+    setOrders(o => o.map(x => x.id === id ? { ...x, status: 'cancelled' } as any : x));
+  }
+
   async function advanceOrder(id: string, next: OrderStatus) {
     await supabase.from('orders').update({ status: next }).eq('id', id);
     setOrders(o => o.map(x => x.id === id ? { ...x, status: next } : x));
@@ -436,8 +454,8 @@ export default function VendorDashboard() {
                         {o.status === 'ready' ? 'Waiting for a rider to pick up' : 'Rider is handling delivery'}
                       </span>
                     )}
-                    {o.status==='pending' && (
-                      <button onClick={()=>advanceOrder(o.id,'cancelled')}
+                    {['pending','confirmed','preparing','ready'].includes(o.status) && (
+                      <button onClick={()=>cancelOrder(o.id, (o as any).payment_status==='paid' && (o as any).payment_method!=='cash_on_delivery')}
                         className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-100 text-gray-600 text-xs font-bold hover:bg-red-50 hover:text-red-600 transition-colors">
                         <XCircle className="w-3.5 h-3.5"/> Cancel
                       </button>
