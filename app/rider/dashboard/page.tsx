@@ -30,6 +30,7 @@ const STATUS_STYLE: Partial<Record<OrderStatus, string>> = {
 
 const ACCEPT_MESSAGES: Record<string, string> = {
   taken:         'This order was just taken by another rider.',
+  declined:      'You cancelled this delivery earlier, so you cannot take it again.',
   reserved:      'This order was requested for another rider. It opens up to everyone after a few minutes.',
   too_far:       'This order is outside your area.',
   offline:       'Go online first to accept orders.',
@@ -227,8 +228,60 @@ export default function RiderDashboard() {
     }
   }
 
-  // What the big button on an Active card does, depending on the order's stage
+  // Rider hands the order back (customer keeps the order and gets a new rider).
+  const [releasing, setReleasing] = useState<string | null>(null);
+  async function releaseOrder(order: Order) {
+    if (!rider) return;
+    const ok = window.confirm(
+      'Cancel this delivery? The customer keeps their order and we will find them another rider. ' +
+      'Cancelling often can affect your account.'
+    );
+    if (!ok) return;
+    const reason = window.prompt('Why are you cancelling? (optional)') ?? '';
+
+    setReleasing(order.id);
+    setNotice('');
+    const { data, error } = await supabase.rpc('rider_release_order', { p_order_id: order.id, p_reason: reason });
+    if (error || data !== 'ok') {
+      setNotice(data === 'too_late'
+        ? 'This order is already out for delivery, so it cannot be cancelled here. Please contact support.'
+        : (error?.message ?? 'Could not cancel this delivery. Please try again.'));
+      setReleasing(null);
+      return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    fetch('/api/orders/rider-released', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}` },
+      body: JSON.stringify({ orderId: order.id }),
+    }).catch(e => console.warn('Rider-cancel notification failed:', e));
+
+    await fetchOrders();
+    setReleasing(null);
+    setNotice('Delivery cancelled. The customer will be given a new rider.');
+  }
+
+  // Active card = the stage button + a "Cancel this delivery" link (until it is out for delivery)
   function renderActiveAction(order: Order) {
+    const canCancel = ['pending', 'confirmed', 'preparing', 'ready', 'picked_up'].includes(order.status);
+    return (
+      <div className="space-y-2">
+        {renderStageAction(order)}
+        {canCancel && (
+          <button
+            onClick={() => releaseOrder(order)}
+            disabled={releasing === order.id}
+            className="w-full py-2.5 bg-white border-2 border-red-200 text-red-600 font-bold rounded-xl text-sm hover:bg-red-50 transition-colors disabled:opacity-60"
+          >
+            {releasing === order.id ? 'Cancelling...' : 'Cancel this delivery'}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // What the big button on an Active card does, depending on the order's stage
+  function renderStageAction(order: Order) {
     if (order.status === 'ready') {
       return (
         <div className="space-y-2">

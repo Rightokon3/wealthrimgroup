@@ -6,7 +6,10 @@ import { getBaseUrl } from '@/lib/getBaseUrl';
 import { createPaystackRefund } from '@/lib/paystackRefund';
 import { sendOrderCancelledEmail } from '@/lib/mailer';
 
-
+// POST /api/orders/cancel   { orderId, reason? }
+// Header: Authorization: Bearer <session.access_token>
+// Cancels the order, refunds the FULL amount (incl. delivery) if it was paid online,
+// and tells the customer. Safe to call twice: the refund can only be started once.
 
 const VENDOR_CAN_CANCEL   = ['pending', 'confirmed', 'preparing', 'ready'];
 const CUSTOMER_CAN_CANCEL = ['pending', 'confirmed'];
@@ -45,7 +48,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, alreadyCancelled: true, refund_status: order.refund_status });
     }
 
-    const allowed = cancelledBy === 'admin' ? ADMIN_CAN_CANCEL : cancelledBy === 'vendor' ? VENDOR_CAN_CANCEL : CUSTOMER_CAN_CANCEL;
+    // A customer whose rider cancelled and who is still waiting for a new one may cancel (full refund).
+    const waitingForNewRider = !order.rider_id && !!order.rider_released_at;
+    const allowed = cancelledBy === 'admin' ? ADMIN_CAN_CANCEL
+      : cancelledBy === 'vendor' ? VENDOR_CAN_CANCEL
+      : waitingForNewRider ? VENDOR_CAN_CANCEL
+      : CUSTOMER_CAN_CANCEL;
     if (!allowed.includes(order.status)) {
       return NextResponse.json({ error: `An order that is "${order.status}" can no longer be cancelled here.` }, { status: 409 });
     }

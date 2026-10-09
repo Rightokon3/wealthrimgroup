@@ -57,7 +57,7 @@ export default function OrdersPage() {
         { event: 'UPDATE', schema: 'public', table: 'orders', filter: `customer_id=eq.${user.id}` },
         payload => {
           const row = payload.new as any;
-          setOrders(prev => prev.map(o => o.id === row.id ? { ...o, status: row.status, rider_id: row.rider_id, refund_status: row.refund_status, refund_amount: row.refund_amount, cancel_reason: row.cancel_reason, cancelled_by: row.cancelled_by } as Order : o));
+          setOrders(prev => prev.map(o => o.id === row.id ? { ...o, status: row.status, rider_id: row.rider_id, rider_released_at: row.rider_released_at, refund_status: row.refund_status, refund_amount: row.refund_amount, cancel_reason: row.cancel_reason, cancelled_by: row.cancelled_by } as Order : o));
 
           if (TRACKABLE.includes(row.status) && row.delivery_type === 'delivery' && !prompted.current.has(row.id)) {
             prompted.current.add(row.id);
@@ -208,6 +208,34 @@ export default function OrdersPage() {
                   </div>
                 )}
               </div>
+
+              {(() => {
+                const o: any = order;
+                const searching = isActive && !o.rider_id && !!o.rider_released_at && o.delivery_type==='delivery';
+                if (!searching) return null;
+                return (
+                  <div className="mx-5 mb-5 rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-800">
+                    <p className="font-bold">Your rider had to cancel. We are finding you a new one.</p>
+                    <p className="text-xs mt-1 opacity-80">Your order is still on. You do not need to do anything. This page updates by itself when a new rider accepts.</p>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm('Cancel this order? If you paid online, the full amount including delivery will be refunded.')) return;
+                        const { data: { session } } = await supabase.auth.getSession();
+                        const res = await fetch('/api/orders/cancel', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}` },
+                          body: JSON.stringify({ orderId: order.id, reason: 'Customer cancelled while waiting for a new rider' }),
+                        });
+                        const j = await res.json().catch(() => ({}));
+                        if (!res.ok) { alert(j.error ?? 'Could not cancel. Try again.'); return; }
+                        window.location.reload();
+                      }}
+                      className="mt-3 px-4 py-2 rounded-xl bg-white border border-orange-300 text-orange-700 text-xs font-bold hover:bg-orange-100">
+                      Cancel order and get a full refund
+                    </button>
+                  </div>
+                );
+              })()}
 
               {order.status==='cancelled' && (() => {
                 const o: any = order;

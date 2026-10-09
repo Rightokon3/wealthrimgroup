@@ -110,6 +110,33 @@ export default function RiderOrderDetail() {
     setLoading(false);
   }
 
+  async function releaseOrder() {
+    if (!order || !rider) return;
+    const ok = window.confirm(
+      'Cancel this delivery? The customer keeps their order and we will find them another rider. ' +
+      'Cancelling often can affect your account.'
+    );
+    if (!ok) return;
+    const reason = window.prompt('Why are you cancelling? (optional)') ?? '';
+
+    setUpdating(true); setErr('');
+    const { data, error } = await supabase.rpc('rider_release_order', { p_order_id: order.id, p_reason: reason });
+    if (error || data !== 'ok') {
+      setErr(data === 'too_late'
+        ? 'This order is already out for delivery, so it cannot be cancelled here. Please contact support.'
+        : (error?.message ?? 'Could not cancel this delivery. Please try again.'));
+      setUpdating(false);
+      return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    fetch('/api/orders/rider-released', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}` },
+      body: JSON.stringify({ orderId: order.id }),
+    }).catch(e => console.warn('Rider-cancel notification failed:', e));
+    router.replace('/rider/dashboard');
+  }
+
   async function updateStatus(next: RiderStep) {
     if (!order || !rider) return;
 
@@ -383,6 +410,17 @@ export default function RiderOrderDetail() {
               : <><Flag className="w-5 h-5" /> {STATUS_NEXT_LABEL[order.status]}</>
             }
           </motion.button>
+        )}
+
+        {/* Rider can hand the order back until it is out for delivery */}
+        {['pending', 'confirmed', 'preparing', 'ready', 'picked_up'].includes(order.status) && (
+          <button
+            onClick={releaseOrder}
+            disabled={updating}
+            className="w-full py-3 bg-white border-2 border-red-200 text-red-600 font-bold rounded-2xl text-sm hover:bg-red-50 transition-colors disabled:opacity-60"
+          >
+            Cancel this delivery
+          </button>
         )}
 
         {/* Locked button while the vendor is still preparing */}
