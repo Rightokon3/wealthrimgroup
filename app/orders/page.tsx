@@ -57,7 +57,7 @@ export default function OrdersPage() {
         { event: 'UPDATE', schema: 'public', table: 'orders', filter: `customer_id=eq.${user.id}` },
         payload => {
           const row = payload.new as any;
-          setOrders(prev => prev.map(o => o.id === row.id ? { ...o, status: row.status, rider_id: row.rider_id, rider_released_at: row.rider_released_at, refund_status: row.refund_status, refund_amount: row.refund_amount, cancel_reason: row.cancel_reason, cancelled_by: row.cancelled_by } as Order : o));
+          setOrders(prev => prev.map(o => o.id === row.id ? { ...o, status: row.status, rider_id: row.rider_id, rider_released_at: row.rider_released_at, delivery_release_by: row.delivery_release_by, dispute_reported_at: row.dispute_reported_at, refund_status: row.refund_status, refund_amount: row.refund_amount, cancel_reason: row.cancel_reason, cancelled_by: row.cancelled_by } as Order : o));
 
           if (TRACKABLE.includes(row.status) && row.delivery_type === 'delivery' && !prompted.current.has(row.id)) {
             prompted.current.add(row.id);
@@ -209,6 +209,15 @@ export default function OrdersPage() {
                 )}
               </div>
 
+              {order.status==='delivered' && !(order as any).delivery_release_by && (
+                <ConfirmDelivery
+                  orderId={order.id}
+                  hasRider={!!order.rider_id}
+                  reported={!!(order as any).dispute_reported_at}
+                  onChanged={(patch)=>setOrders(prev=>prev.map(x=>x.id===order.id?({...x,...patch} as Order):x))}
+                />
+              )}
+
               {(() => {
                 const o: any = order;
                 const searching = isActive && !o.rider_id && !!o.rider_released_at && o.delivery_type==='delivery';
@@ -346,6 +355,86 @@ function ReviewForm({ orderId, storeId, storeName, onSubmit }:{
         className="px-5 py-2 bg-orange-500 text-white rounded-xl font-bold text-sm hover:bg-orange-600 disabled:opacity-60">
         {saving?'Saving...':'Submit Review'}
       </button>
+    </div>
+  );
+}
+
+
+// ── Customer confirms the delivery (this is what releases the rider's pay) ──
+function ConfirmDelivery({ orderId, hasRider, reported, onChanged }:{
+  orderId:string; hasRider:boolean; reported:boolean; onChanged:(patch:any)=>void;
+}) {
+  const [stars,setStars]     = useState(0);
+  const [comment,setComment] = useState('');
+  const [busy,setBusy]       = useState(false);
+  const [err,setErr]         = useState('');
+
+  async function confirm() {
+    setBusy(true); setErr('');
+    const { data, error } = await supabase.rpc('confirm_delivery', {
+      p_order_id: orderId, p_stars: stars || null, p_comment: comment || null,
+    });
+    setBusy(false);
+    if (error || (data !== 'ok' && data !== 'already')) { setErr(error?.message ?? 'Could not confirm. Please try again.'); return; }
+    onChanged({ delivery_release_by: 'customer', dispute_reported_at: null });
+  }
+
+  async function report() {
+    const reason = window.prompt('What went wrong? (for example: I did not receive this order)');
+    if (reason === null) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch('/api/orders/delivery-problem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}` },
+      body: JSON.stringify({ orderId, reason }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(j.error ?? 'Could not send your report.'); return; }
+    onChanged({ dispute_reported_at: new Date().toISOString() });
+  }
+
+  if (reported) return (
+    <div className="mx-5 mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+      <p className="font-bold">We are looking into your report.</p>
+      <p className="text-xs mt-1 opacity-80">If the order did arrive after all, you can still confirm it below.</p>
+      <button onClick={confirm} disabled={busy} className="mt-3 px-4 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 text-xs font-bold hover:bg-amber-100 disabled:opacity-60">
+        Actually, I received it
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="mx-5 mb-5 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-900">
+      <p className="font-bold">Did you receive your order?</p>
+      <p className="text-xs mt-1 opacity-80">Confirming takes one tap and makes sure your rider gets paid.</p>
+
+      {hasRider && (
+        <div className="mt-3">
+          <p className="text-xs font-bold mb-1.5">Rate your rider (optional)</p>
+          <div className="flex gap-1">
+            {[1,2,3,4,5].map(n=>(
+              <button key={n} type="button" onClick={()=>setStars(n)} aria-label={`${n} star${n>1?'s':''}`}>
+                <Star className={`w-7 h-7 ${n<=stars?'fill-amber-400 text-amber-400':'text-gray-300'}`}/>
+              </button>
+            ))}
+          </div>
+          {stars>0 && (
+            <input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Say something about the delivery (optional)"
+              className="mt-2 w-full px-3 py-2 rounded-lg border border-green-200 bg-white text-xs outline-none focus:border-green-400"/>
+          )}
+        </div>
+      )}
+
+      {err && <p className="text-xs text-red-600 font-medium mt-2">{err}</p>}
+      <div className="flex flex-wrap gap-2 mt-3">
+        <button onClick={confirm} disabled={busy}
+          className="px-4 py-2.5 rounded-xl bg-green-600 text-white text-xs font-black hover:bg-green-700 disabled:opacity-60 flex items-center gap-2">
+          <CheckCircle className="w-4 h-4"/> {busy ? 'Confirming...' : 'I received it'}
+        </button>
+        <button onClick={report} className="px-4 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50">
+          I did not get it
+        </button>
+      </div>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Package, ShoppingBag, TrendingUp, Plus, Eye,
   Edit3, ToggleRight, ToggleLeft, Clock, CheckCircle, XCircle,
   Truck, Bell, LogOut, Star, ChevronRight, Banknote, Percent,
-  Store as StoreIcon, Settings as SettingsIcon, Menu, X
+  Store as StoreIcon, Settings as SettingsIcon, Menu, X, Wallet
 } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -201,6 +201,10 @@ export default function VendorDashboard() {
         <Link href={`/store/${store?.id}`}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-400 hover:bg-gray-800 hover:text-white transition-all">
           <Eye className="w-4 h-4 flex-shrink-0"/> View My Store
+        </Link>
+        <Link href="/vendor/payments"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-green-400 hover:bg-gray-800 transition-all">
+          <Wallet className="w-4 h-4 flex-shrink-0"/> Payments
         </Link>
         <Link href="/vendor/products/new"
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-orange-400 hover:bg-gray-800 transition-all">

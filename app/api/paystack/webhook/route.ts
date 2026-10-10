@@ -39,6 +39,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true });
   }
 
+  // ── Rider paid back cash-on-delivery money ──
+  if (event.event === 'charge.success' && event.data?.metadata?.type === 'rider_remit') {
+    const userId = event.data.metadata.user_id as string | undefined;
+    const reference = event.data.reference as string;
+    if (userId) {
+      // The unique index on `reference` makes a repeated webhook harmless.
+      await supabaseAdmin.from('wallet_transactions').insert({
+        user_id: userId, role: 'rider', type: 'remittance',
+        amount: event.data.amount / 100, status: 'available',
+        description: 'Cash paid back to Drovo', reference,
+      });
+    }
+    return NextResponse.json({ received: true });
+  }
+
+  // ── Withdrawal results (money sent to a vendor's / rider's bank) ──
+  if (typeof event.event === 'string' && event.event.startsWith('transfer.')) {
+    const reference = event.data?.reference as string | undefined;
+    if (reference) {
+      if (event.event === 'transfer.success') {
+        await supabaseAdmin.from('wallet_transactions').update({ status: 'paid' }).eq('reference', reference);
+      } else if (event.event === 'transfer.failed' || event.event === 'transfer.reversed') {
+        // 'failed' rows are not counted in the balance, so the money returns to the wallet.
+        const { data: tx } = await supabaseAdmin.from('wallet_transactions')
+          .update({ status: 'failed', description: `Withdrawal failed (${event.event.replace('transfer.', '')}). Money returned to your wallet.` })
+          .eq('reference', reference).select('user_id, amount').maybeSingle();
+        if (tx) {
+          await supabaseAdmin.from('notifications').insert({
+            user_id: tx.user_id, type: 'withdrawal_failed', title: 'Withdrawal failed',
+            body: `Your withdrawal of ₦${Math.abs(Number(tx.amount)).toLocaleString()} could not be completed. The money is back in your wallet.`,
+          });
+        }
+      }
+    }
+    return NextResponse.json({ received: true });
+  }
+
   if (event.event === 'charge.success' && event.data?.channel === 'dedicated_nuban') {
     const customerCode = event.data.customer?.customer_code;
     const amountNaira = event.data.amount / 100;

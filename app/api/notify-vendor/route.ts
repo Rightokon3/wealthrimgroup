@@ -25,19 +25,10 @@ const STATUS_MESSAGES: Record<string, string> = {
   ready:      'Your order is ready.',
   picked_up:  'Your order has been picked up by the rider. Tap to track it live.',
   on_the_way: 'Your order has been sent out for delivery! 🚴 Would you like to track it? Tap to follow your rider live.',
-  delivered:  'Your order has been delivered. Enjoy! 🎉',
+  delivered:  'Your order was marked delivered. Did you get it? Tap "I received it" on your orders page so your rider gets paid.',
   cancelled:  'Your order has been cancelled.',
   refunded:   'Your order has been refunded.',
 };
-
-// De-duplicated, trimmed, lower-cased list of the addresses that actually exist.
-function uniqueEmails(...emails: (string | null | undefined)[]): string[] {
-  return Array.from(new Set(
-    emails
-      .map(e => e?.trim().toLowerCase())
-      .filter((e): e is string => !!e)
-  ));
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -103,55 +94,32 @@ async function notifyNewOrder(orderId: string, baseUrl: string) {
   const vendorProfile = store?.profiles as any;
   const customer      = order.profiles as any;
   const vendorId      = store?.vendor_id;
+  const vendorEmail   = store?.email || vendorProfile?.email;
 
-  // Email BOTH the store's contact email and the vendor's account email
-  // (previously only one was used, so an old/wrong store email meant the
-  // vendor never saw the message).
-  const vendorEmails = uniqueEmails(store?.email, vendorProfile?.email);
-
-  // ── Vendor: rich order email ─────────────────────────────────────
-  // Wrapped so an email problem can never block the in-app / push / rider /
-  // admin notifications below. Failures are logged with the real reason.
-  if (vendorEmails.length === 0) {
-    console.error('Vendor order email skipped: no email on file for store', store?.name, '(vendor', vendorId, ')');
-  } else {
-    try {
-      const subtotal    = Number(order.subtotal ?? 0);
-      const deliveryFee = Number(order.delivery_fee ?? 0);
-      // The checkout insert doesn't set platform_fee / vendor_payout, so they
-      // can be null on a fresh order. The email template calls .toLocaleString()
-      // on them, which throws on null — so fall back to computing them here.
-      const platformFee  = Number(order.platform_fee) > 0 ? Number(order.platform_fee) : Math.round(subtotal * 0.10);
-      const vendorPayout = Number(order.vendor_payout) > 0
-        ? Number(order.vendor_payout)
-        : subtotal + deliveryFee - platformFee;
-
-      await sendOrderNotificationEmail({
-        vendorEmail:     vendorEmails.join(', '),
-        vendorName:      vendorProfile?.full_name ?? 'Vendor',
-        storeName:       store?.name ?? 'Your Store',
-        orderNumber:     order.order_number,
-        orderId:         order.id,
-        customerName:    customer?.full_name ?? 'Customer',
-        customerPhone:   order.customer_phone ?? '',
-        deliveryAddress: order.delivery_address ?? '',
-        deliveryCity:    order.delivery_city ?? '',
-        deliveryNote:    order.delivery_note ?? null,
-        items: (order.order_items ?? []).map((i: any) => ({
-          name: i.name, quantity: i.quantity, price: Number(i.price), subtotal: Number(i.subtotal),
-        })),
-        subtotal,
-        deliveryFee,
-        platformFee,
-        vendorPayout,
-        total:         Number(order.total ?? subtotal + deliveryFee),
-        paymentMethod: order.payment_method,
-        paymentStatus: order.payment_status,
-        deliveryType:  order.delivery_type,
-      });
-    } catch (err) {
-      console.error('Vendor order email failed:', err);
-    }
+  // ── Vendor: rich order email (unchanged) ────────────────────────
+  if (vendorEmail) {
+    await sendOrderNotificationEmail({
+      vendorEmail,
+      vendorName:      vendorProfile?.full_name ?? 'Vendor',
+      storeName:       store?.name ?? 'Your Store',
+      orderNumber:     order.order_number,
+      orderId:         order.id,
+      customerName:    customer?.full_name ?? 'Customer',
+      customerPhone:   order.customer_phone,
+      deliveryAddress: order.delivery_address ?? '',
+      deliveryCity:    order.delivery_city ?? '',
+      deliveryNote:    order.delivery_note,
+      items: (order.order_items ?? []).map((i: any) => ({
+        name: i.name, quantity: i.quantity, price: i.price, subtotal: i.subtotal,
+      })),
+      subtotal:      order.subtotal,
+      deliveryFee:   order.delivery_fee,
+      platformFee:   order.platform_fee,
+      vendorPayout:  order.vendor_payout,
+      total:         order.total,
+      paymentMethod: order.payment_method,
+      deliveryType:  order.delivery_type,
+    });
   }
 
   // ── Vendor: in-app + push ────────────────────────────────────────

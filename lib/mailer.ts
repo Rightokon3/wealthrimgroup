@@ -172,7 +172,7 @@ const STATUS_EMAIL: Record<string, { emoji: string; subject: string; headline: s
   ready:      { emoji: '📦', subject: 'Your order is ready',                 headline: 'Ready for pickup',      text: 'Your order is ready. A rider will collect it shortly.' },
   picked_up:  { emoji: '🛵', subject: 'A rider has picked up your order',    headline: 'Picked up by rider',    text: 'Your rider has collected your order from the vendor.' },
   on_the_way: { emoji: '🚴', subject: 'Your order is on the way!',           headline: 'On the way',            text: 'Your order has been sent out for delivery. You can follow your rider live on the map.' },
-  delivered:  { emoji: '🎉', subject: 'Your order has been delivered',       headline: 'Delivered',             text: 'Your order has arrived. Enjoy! We would love to hear what you think, so please leave a review.' },
+  delivered:  { emoji: '🎉', subject: 'Your order has been delivered',       headline: 'Delivered',             text: 'Your order has been marked delivered. Please open your orders and tap "I received it" so your rider can be paid. You can also rate your rider and leave a review.' },
   cancelled:  { emoji: '❌', subject: 'Your order has been cancelled',       headline: 'Order cancelled',       text: 'Your order has been cancelled. If you did not expect this, please contact the vendor or our support team.' },
   refunded:   { emoji: '💸', subject: 'Your order has been refunded',        headline: 'Order refunded',        text: 'Your order has been refunded. It can take a little while for the money to show in your account.' },
 };
@@ -266,6 +266,21 @@ export async function sendRefundProcessedEmail(
         <strong style="font-family:monospace;">${esc(o.orderNumber)}</strong> has been processed and sent back to the card or bank account you paid with.
         Depending on your bank, it may take a few working days to appear.</p>
       ${button(ordersUrl, 'View my orders')}
+    `),
+  });
+}
+
+
+// ── Generic customer notice with a button (used for delivery-confirmation reminders) ──
+export async function sendCustomerNoticeEmail(to: string, title: string, message: string, link: string, linkLabel: string) {
+  await send({
+    to,
+    subject: title,
+    html: wrapper(`
+      <h2 style="margin-bottom:8px;">${esc(title)}</h2>
+      <p style="font-size:15px;">${esc(message)}</p>
+      ${button(link, linkLabel)}
+      <p style="color:#999; font-size:12px;">You are receiving this because you placed an order on Drovo.</p>
     `),
   });
 }

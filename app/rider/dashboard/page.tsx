@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bike, MapPin, Package, Clock, CheckCircle, History,
-  LogOut, ToggleLeft, ToggleRight, ChevronRight, Loader2, Bell, Navigation, Store as StoreIcon
+  LogOut, ToggleLeft, ToggleRight, ChevronRight, Loader2, Bell, Navigation, Store as StoreIcon, Wallet
 } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -411,6 +411,16 @@ export default function RiderDashboard() {
             </motion.div>
           ))}
         </div>
+
+        {/* Earnings & payouts */}
+        <Link href="/rider/earnings"
+          className="flex items-center justify-between gap-3 bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3.5 hover:bg-gray-50">
+          <span className="flex items-center gap-3 font-black text-sm text-gray-900">
+            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white"><Wallet className="w-4 h-4" /></span>
+            Earnings &amp; payouts
+          </span>
+          <ChevronRight className="w-4 h-4 text-gray-400" />
+        </Link>
 
         {/* Offline notice */}
         {!rider?.is_online && (
