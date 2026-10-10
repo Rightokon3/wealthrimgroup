@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, ShoppingBag, Store, Users,
-  Shield, ShieldPlus, Settings, LogOut, Menu, X
+  Shield, ShieldPlus, Settings, LogOut, Menu, X, Wallet
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,6 +15,7 @@ const NAV = [
   { href: '/admin',               label: 'Dashboard',      icon: <LayoutDashboard className="w-4 h-4" /> },
   { href: '/admin/orders',        label: 'Orders',         icon: <ShoppingBag className="w-4 h-4" /> },
   { href: '/admin/stores',        label: 'Stores',         icon: <Store className="w-4 h-4" /> },
+  { href: '/admin/payouts',        label: 'Payouts',        icon: <Wallet className="w-4 h-4" /> },
   { href: '/admin/users',         label: 'Users',          icon: <Users className="w-4 h-4" /> },
   { href: '/admin/manage-admins', label: 'Manage Admins',  icon: <ShieldPlus className="w-4 h-4" /> },
   { href: '/admin/settings',      label: 'Settings',       icon: <Settings className="w-4 h-4" /> },

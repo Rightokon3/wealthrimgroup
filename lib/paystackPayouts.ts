@@ -75,3 +75,11 @@ export async function initializePayment(opts: {
   if (!r.ok) throw new Error(r.message ?? 'Could not start the payment');
   return r.json.data.authorization_url as string;
 }
+
+/** Money available in your Paystack account for payouts, in naira. */
+export async function getPaystackBalance(): Promise<number | null> {
+  const r = await call('/balance', 'GET');
+  if (!r.ok) return null;
+  const ngn = (r.json.data as any[]).find(b => b.currency === 'NGN');
+  return ngn ? Number(ngn.balance) / 100 : 0;
+}

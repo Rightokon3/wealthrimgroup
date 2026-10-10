@@ -26,6 +26,8 @@ async function authHeaders() {
 export default function WalletPanel({ role, userId }: { role: Role; userId: string }) {
   const [available, setAvailable] = useState(0);
   const [pending, setPending] = useState(0);
+  const [earned, setEarned] = useState(0);
+  const [paidOut, setPaidOut] = useState(0);
   const [txs, setTxs] = useState<Tx[]>([]);
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,8 +43,7 @@ export default function WalletPanel({ role, userId }: { role: Role; userId: stri
   const [saving, setSaving] = useState(false);
   const [bankErr, setBankErr] = useState('');
 
-  // withdraw / remit
-  const [amount, setAmount] = useState('');
+  // pay back (riders)
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -55,6 +56,8 @@ export default function WalletPanel({ role, userId }: { role: Role; userId: stri
     const s = (sum.data ?? {}) as any;
     setAvailable(Number(s.available ?? 0));
     setPending(Number(s.pending ?? 0));
+    setEarned(Number(s.earned ?? 0));
+    setPaidOut(Number(s.paid_out ?? 0));
     setTxs((list.data ?? []) as Tx[]);
     setAccount((acct.data ?? null) as Account | null);
     setLoading(false);
@@ -114,20 +117,6 @@ export default function WalletPanel({ role, userId }: { role: Role; userId: stri
     await load();
   }
 
-  async function withdraw() {
-    setMsg(null);
-    const amt = Math.floor(Number(amount));
-    if (!amt || amt <= 0) { setMsg({ ok: false, text: 'Enter an amount.' }); return; }
-    setBusy(true);
-    const res = await fetch('/api/payout/withdraw', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ amount: amt }) });
-    const j = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) { setMsg({ ok: false, text: j.error ?? 'Withdrawal failed.' }); return; }
-    setAmount('');
-    setMsg({ ok: true, text: 'Withdrawal started. The money is on its way to your bank.' });
-    await load();
-  }
-
   async function payBack() {
     setMsg(null); setBusy(true);
     const res = await fetch('/api/wallet/remit', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({}) });
@@ -148,7 +137,7 @@ export default function WalletPanel({ role, userId }: { role: Role; userId: stri
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white mb-3"><Wallet className="w-4 h-4" /></div>
           <div className={`text-2xl font-black ${available < 0 ? 'text-red-600' : 'text-gray-900'}`}>{naira(available)}</div>
-          <div className="text-xs text-gray-400 font-medium mt-0.5">{available < 0 ? 'You owe Drovo' : 'Available to withdraw'}</div>
+          <div className="text-xs text-gray-400 font-medium mt-0.5">{available < 0 ? 'You owe Drovo' : 'Waiting to be paid by Drovo'}</div>
         </div>
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white mb-3"><Clock className="w-4 h-4" /></div>
@@ -178,26 +167,15 @@ export default function WalletPanel({ role, userId }: { role: Role; userId: stri
         </div>
       )}
 
-      {/* Withdraw */}
+      {/* Paid by Drovo */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h3 className="font-black text-gray-900 mb-1 flex items-center gap-2"><ArrowDownToLine className="w-4 h-4 text-orange-500" /> Withdraw</h3>
-        <p className="text-xs text-gray-400 mb-4">You choose when to be paid. Money goes to the bank account saved below.</p>
-        {!account ? (
-          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">Add your bank account below first.</p>
-        ) : available <= 0 ? (
-          <p className="text-sm text-gray-400">Nothing available to withdraw yet.</p>
-        ) : (
-          <div className="flex gap-2">
-            <input value={amount} onChange={e => setAmount(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder="Amount in ₦"
-              className="flex-1 min-w-0 px-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none" />
-            <button type="button" onClick={() => setAmount(String(Math.floor(available)))}
-              className="px-3 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50">All</button>
-            <button onClick={withdraw} disabled={busy}
-              className="px-5 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-black text-sm disabled:opacity-60 flex items-center gap-2">
-              {busy && <Loader2 className="w-4 h-4 animate-spin" />} Withdraw
-            </button>
-          </div>
-        )}
+        <h3 className="font-black text-gray-900 mb-1 flex items-center gap-2"><ArrowDownToLine className="w-4 h-4 text-orange-500" /> Payments from Drovo</h3>
+        <p className="text-xs text-gray-400 mb-4">Drovo pays you straight to the bank account saved below. You do not need to request anything.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl bg-gray-50 p-3"><div className="font-black text-gray-900">{naira(earned)}</div><div className="text-[11px] text-gray-400 font-medium">Total earned</div></div>
+          <div className="rounded-xl bg-gray-50 p-3"><div className="font-black text-gray-900">{naira(paidOut)}</div><div className="text-[11px] text-gray-400 font-medium">Total paid to you</div></div>
+        </div>
+        {!account && <p className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">Add your bank account below so Drovo can pay you.</p>}
       </div>
 
       {/* Bank account */}
