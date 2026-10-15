@@ -1,257 +1,124 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
-import { Bike, Eye, EyeOff, ChevronRight, Loader2 } from 'lucide-react';
+import { Bike, Eye, EyeOff, Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import type { PickedLocation } from '@/components/vendor/LocationPicker';
+import { supabase } from '@/lib/supabase';
+import { rateLimitedLogin } from '@/lib/rateLimitedLogin';
 
-// Leaflet needs the browser, so it must not render on the server.
-const LocationPicker = dynamic(() => import('@/components/vendor/LocationPicker'), {
-  ssr: false,
-  loading: () => (
-    <div className="rounded-2xl border border-gray-200 bg-gray-50 flex items-center justify-center" style={{ height: 320 }}>
-      <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  ),
-});
-
-type VehicleType = 'motorcycle' | 'bicycle' | 'car';
-
-const VEHICLE_OPTIONS: { value: VehicleType; label: string; icon: string }[] = [
-  { value: 'motorcycle', label: 'Motorcycle', icon: '🏍️' },
-  { value: 'bicycle', label: 'Bicycle', icon: '🚲' },
-  { value: 'car', label: 'Car', icon: '🚗' },
-];
-
-const inputCls = 'w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium';
-
-export default function RiderSignup() {
+export default function RiderLogin() {
   const router = useRouter();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const [form, setForm] = useState({
-    full_name: '', email: '', phone: '', password: '', city: '', state: '',
-    vehicle_type: 'motorcycle' as VehicleType,
-    vehicle_plate: '',
-  });
-  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
-
-  function set(field: string, value: string) {
-    setForm(f => ({ ...f, [field]: value }));
-    setError('');
-  }
-
-  // Called by the map whenever the pin moves. Auto-fills city / state.
-  function handleLocation(loc: PickedLocation) {
-    setCoords({ latitude: loc.latitude, longitude: loc.longitude });
-    setError('');
-    setForm(f => ({
-      ...f,
-      city:  loc.city  ? loc.city  : f.city,
-      state: loc.state ? loc.state : f.state,
-    }));
-  }
-
-  function validateStep1() {
-    if (!form.full_name || !form.email || !form.phone || !form.password) {
-      setError('Please fill in all fields.'); return false;
-    }
-    if (form.password.length < 6) {
-      setError('Password must be at least 6 characters.'); return false;
-    }
-    return true;
-  }
-
-  function validateStep2() {
-    if (!coords) {
-      setError('Please pin the area where you are based on the map.'); return false;
-    }
-    if (!form.city.trim()) {
-      setError('We could not detect your city. Please type it in.'); return false;
-    }
-    return true;
-  }
-
-  async function handleSubmit() {
+  async function handleLogin() {
+    if (!email || !password) { setError('Enter your email and password.'); return; }
     setLoading(true);
     setError('');
-    try {
-      const res = await fetch('/api/rider/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          latitude:  coords?.latitude  ?? null,
-          longitude: coords?.longitude ?? null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Signup failed. Try again.');
 
-      router.replace(
-        `/rider/verify-pending?email=${encodeURIComponent(data.email)}&uid=${data.user_id}`
-      );
+    try {
+      // Goes through the server so repeated wrong passwords get locked for 15 minutes.
+      const { user, error: authErr } = await rateLimitedLogin(email, password);
+      if (authErr || !user) {
+        setError(authErr ?? 'Login failed. Check your email and password.');
+        return;
+      }
+      const data = { user };
+
+      const { data: rider, error: riderErr } = await supabase
+        .from('riders')
+        .select('id, is_active, email_verified')
+        .eq('user_id', data.user.id)
+        .maybeSingle();
+
+      if (riderErr || !rider) {
+        await supabase.auth.signOut();
+        setError('No rider account found for this email. Please sign up first.');
+        return;
+      }
+
+      if (!rider.email_verified) {
+        router.replace(
+          `/rider/verify-pending?email=${encodeURIComponent(email)}&uid=${data.user.id}`
+        );
+        return;
+      }
+
+      if (!rider.is_active) {
+        await supabase.auth.signOut();
+        setError('Your account has been deactivated. Contact support.');
+        return;
+      }
+
+      router.replace('/rider/dashboard');
     } catch (e: any) {
-      setError(e.message || 'Signup failed. Try again.');
+      // Catches network failures, blocked requests, or anything else
+      // unexpected — so the button never spins forever.
+      setError(e?.message || 'Something went wrong. Check your connection and try again.');
+    } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center px-4">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-green-200">
             <Bike className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-black text-gray-900">Become a Rider</h1>
-          <p className="text-gray-400 text-sm mt-1">Earn money delivering across the city</p>
+          <h1 className="text-2xl font-black text-gray-900">Rider Login</h1>
+          <p className="text-gray-400 text-sm mt-1">Sign in to your delivery dashboard</p>
         </div>
 
-        <div className="flex items-center gap-2 mb-6">
-          {[1, 2, 3].map(s => (
-            <div key={s} className={`h-1.5 flex-1 rounded-full transition-all ${s <= step ? 'bg-green-500' : 'bg-gray-200'}`} />
-          ))}
-        </div>
-
-        <div className="bg-white rounded-3xl shadow-xl shadow-gray-100 border border-gray-100 p-8">
+        <div className="bg-white rounded-3xl shadow-xl shadow-gray-100 border border-gray-100 p-8 space-y-4">
           {error && (
-            <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm font-medium">
+            <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm font-medium">
               {error}
             </div>
           )}
 
-          {/* STEP 1 — Personal */}
-          {step === 1 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
-              <h2 className="font-black text-gray-900 mb-4">Personal Details</h2>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Email</label>
+            <input type="email" value={email} onChange={e => { setEmail(e.target.value); setError(''); }}
+              placeholder="you@email.com"
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium" />
+          </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Full Name *</label>
-                <input type="text" value={form.full_name} onChange={e => set('full_name', e.target.value)}
-                  placeholder="Your full name" className={inputCls} />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Email *</label>
-                <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
-                  placeholder="you@email.com" className={inputCls} />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Phone *</label>
-                <input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)}
-                  placeholder="080XXXXXXXX" className={inputCls} />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Password *</label>
-                <div className="relative">
-                  <input type={showPw ? 'text' : 'password'} value={form.password} onChange={e => set('password', e.target.value)}
-                    placeholder="Min. 6 characters" className={`${inputCls} pr-11`} />
-                  <button type="button" onClick={() => setShowPw(v => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                onClick={() => { if (validateStep1()) setStep(2); }}
-                className="w-full py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black rounded-xl flex items-center justify-center gap-2 hover:from-green-600 hover:to-emerald-700 transition-all mt-2"
-              >
-                Next <ChevronRight className="w-4 h-4" />
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Password</label>
+            <div className="relative">
+              <input type={showPw ? 'text' : 'password'} value={password} onChange={e => { setPassword(e.target.value); setError(''); }}
+                placeholder="Your password"
+                onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-50 text-sm font-medium pr-11" />
+              <button type="button" onClick={() => setShowPw(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
-            </motion.div>
-          )}
+            </div>
+          </div>
 
-          {/* STEP 2 — Base location (map) */}
-          {step === 2 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
-              <h2 className="font-black text-gray-900">Where are you based?</h2>
-              <p className="text-xs text-gray-400 -mt-2">
-                Search your area, use your current location, or tap the map. You will be matched with orders from vendors near this spot.
-              </p>
+          <button onClick={handleLogin} disabled={loading}
+            className="w-full py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black rounded-xl flex items-center justify-center gap-2 hover:from-green-600 hover:to-emerald-700 transition-all disabled:opacity-60 mt-2">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sign In'}
+          </button>
+        </div>
 
-              <LocationPicker value={coords} onChange={handleLocation} />
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">City *</label>
-                  <input type="text" value={form.city} onChange={e => set('city', e.target.value)}
-                    placeholder="Auto-filled" className={inputCls} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">State</label>
-                  <input type="text" value={form.state} onChange={e => set('state', e.target.value)}
-                    placeholder="Auto-filled" className={inputCls} />
-                </div>
-              </div>
-
-              <div className="flex gap-3 mt-2">
-                <button onClick={() => setStep(1)}
-                  className="flex-1 py-3.5 border-2 border-gray-200 text-gray-600 font-black rounded-xl hover:border-gray-300 transition-all">
-                  Back
-                </button>
-                <button
-                  onClick={() => { if (validateStep2()) setStep(3); }}
-                  className="flex-1 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black rounded-xl flex items-center justify-center gap-2 hover:from-green-600 hover:to-emerald-700 transition-all">
-                  Next <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* STEP 3 — Vehicle */}
-          {step === 3 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
-              <h2 className="font-black text-gray-900 mb-4">Vehicle Details</h2>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Vehicle Type *</label>
-                <div className="grid grid-cols-3 gap-3">
-                  {VEHICLE_OPTIONS.map(v => (
-                    <button key={v.value} type="button" onClick={() => set('vehicle_type', v.value)}
-                      className={`py-3 rounded-xl border-2 text-center transition-all ${
-                        form.vehicle_type === v.value ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300'
-                      }`}>
-                      <div className="text-2xl mb-1">{v.icon}</div>
-                      <div className="text-xs font-bold text-gray-700">{v.label}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
-                  Plate Number <span className="text-gray-300 font-normal normal-case">(optional)</span>
-                </label>
-                <input type="text" value={form.vehicle_plate} onChange={e => set('vehicle_plate', e.target.value.toUpperCase())}
-                  placeholder="e.g. LAG-123-AB" className={`${inputCls} font-mono`} />
-              </div>
-
-              <div className="flex gap-3 mt-2">
-                <button onClick={() => setStep(2)}
-                  className="flex-1 py-3.5 border-2 border-gray-200 text-gray-600 font-black rounded-xl hover:border-gray-300 transition-all">
-                  Back
-                </button>
-                <button onClick={handleSubmit} disabled={loading}
-                  className="flex-1 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black rounded-xl flex items-center justify-center gap-2 hover:from-green-600 hover:to-emerald-700 transition-all disabled:opacity-60">
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create Account'}
-                </button>
-              </div>
-            </motion.div>
-          )}
+        <div className="text-right mt-1.5">
+          <Link href="/rider/forgot-password" className="text-xs text-green-600 font-bold hover:underline">
+            Forgot password?
+          </Link>
         </div>
 
         <p className="text-center text-sm text-gray-400 mt-6">
-          Already a rider?{' '}
-          <Link href="/rider/login" className="text-green-600 font-bold hover:underline">Sign in</Link>
+          Not a rider yet?{' '}
+          <Link href="/rider/signup" className="text-green-600 font-bold hover:underline">Apply now</Link>
         </p>
       </motion.div>
     </div>

@@ -6,11 +6,12 @@ import { motion } from 'framer-motion';
 import { ShoppingCart, Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { rateLimitedLogin } from '@/lib/rateLimitedLogin';
 
 function LoginInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const { signIn, isLoggedIn, loading } = useAuth();
+  const { isLoggedIn, loading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -23,9 +24,10 @@ function LoginInner() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError(''); setSubmitting(true);
 
-    const { error } = await signIn(email, password);
+    // Goes through the server so repeated wrong passwords get locked for 15 minutes.
+    const { error } = await rateLimitedLogin(email, password);
     if (error) {
-      setError(error.includes('Invalid login') ? 'Incorrect email or password.' : error);
+      setError(error);
       setSubmitting(false);
       return;
     }
