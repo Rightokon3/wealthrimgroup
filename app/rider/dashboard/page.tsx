@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bike, MapPin, Package, Clock, CheckCircle, History,
-  LogOut, ToggleLeft, ToggleRight, ChevronRight, Loader2, Bell, Navigation, Store as StoreIcon, Wallet
+  LogOut, ToggleLeft, ToggleRight, ChevronRight, Loader2, Bell, Navigation, Store as StoreIcon, Wallet, Settings, Star
 } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -422,6 +422,16 @@ export default function RiderDashboard() {
           <ChevronRight className="w-4 h-4 text-gray-400" />
         </Link>
 
+        {/* Settings */}
+        <Link href="/rider/settings"
+          className="flex items-center justify-between gap-3 bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3.5 hover:bg-gray-50">
+          <span className="flex items-center gap-3 font-black text-sm text-gray-900">
+            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white"><Settings className="w-4 h-4" /></span>
+            Settings
+          </span>
+          <ChevronRight className="w-4 h-4 text-gray-400" />
+        </Link>
+
         {/* Offline notice */}
         {!rider?.is_online && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -518,8 +528,8 @@ export default function RiderDashboard() {
                           </div>
                           <div className="text-xs text-gray-400">{new Date(order.created_at).toLocaleDateString()}</div>
                         </div>
-                        <span className="text-xs font-bold px-2.5 py-1 rounded-full border bg-green-100 text-green-700 border-green-200">
-                          Delivered ✓
+                        <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border bg-green-100 text-green-700 border-green-200">
+                          <CheckCircle className="w-3 h-3" /> Delivered
                         </span>
                       </div>
                     </div>
@@ -580,8 +590,8 @@ function OrderCard({ order, action, riderId, onNavigate }: { order: Order; actio
       </div>
 
       {requestedForMe && (
-        <div className="text-xs font-bold text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-1.5">
-          ⭐ The customer chose you for this delivery
+        <div className="flex items-center gap-1.5 text-xs font-bold text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-1.5">
+          <Star className="w-3.5 h-3.5 fill-green-600 text-green-600" /> The customer chose you for this delivery
         </div>
       )}
 

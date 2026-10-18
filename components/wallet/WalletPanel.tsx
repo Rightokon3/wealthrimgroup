@@ -117,9 +117,48 @@ export default function WalletPanel({ role, userId }: { role: Role; userId: stri
     await load();
   }
 
+  // Back from the Paystack page: confirm the payment ourselves, so a late or lost webhook never leaves the money uncredited.
+  useEffect(() => {
+    if (role !== 'rider' || typeof window === 'undefined') return;
+    const q = new URLSearchParams(window.location.search);
+    const ref = q.get('reference') ?? q.get('trxref');
+    if (!ref) return;
+    let tries = 0, stop = false;
+    const run = async () => {
+      tries++;
+      try {
+        const res = await fetch('/api/wallet/remit/verify', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ reference: ref }), signal: AbortSignal.timeout(20000) });
+        const j = await res.json().catch(() => ({}));
+        if (stop) return;
+        if (j.state === 'success') {
+          setMsg({ ok: true, text: j.already ? 'Your payment is already recorded. Thank you.' : `Payment received. ₦${Math.round(j.amount).toLocaleString('en-NG')} was taken off what you owe.` });
+          window.history.replaceState({}, '', window.location.pathname);
+          load();
+          return;
+        }
+        if (j.state === 'failed') { setMsg({ ok: false, text: 'That payment was not completed. You have not been charged.' }); window.history.replaceState({}, '', window.location.pathname); return; }
+      } catch { /* network problem: try again below */ }
+      if (tries < 6 && !stop) {
+        setMsg({ ok: true, text: 'Confirming your payment…' });
+        setTimeout(run, 5000);
+      } else if (!stop) {
+        setMsg({ ok: true, text: 'We could not confirm your payment yet. Do not pay again. It will be credited automatically once it is confirmed. Refresh in a few minutes.' });
+      }
+    };
+    run();
+    return () => { stop = true; };
+  }, [role, load]);
+
   async function payBack() {
     setMsg(null); setBusy(true);
-    const res = await fetch('/api/wallet/remit', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({}) });
+    let res: Response;
+    try {
+      res = await fetch('/api/wallet/remit', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({}), signal: AbortSignal.timeout(25000) });
+    } catch {
+      setBusy(false);
+      setMsg({ ok: false, text: 'Poor network. Nothing was charged. Please try again.' });
+      return;
+    }
     const j = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) { setMsg({ ok: false, text: j.error ?? 'Could not start the payment.' }); return; }

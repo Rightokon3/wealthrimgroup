@@ -6,8 +6,9 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, ShoppingCart, Settings, Camera, CheckCircle, Star, MapPin, Plus, Trash2, Home, Briefcase } from 'lucide-react';
+import { User, ShoppingCart, Settings, Camera, CheckCircle, Star, MapPin, Plus, Trash2, Home, Briefcase, ShieldCheck, Store, Bike } from 'lucide-react';
 import { SavedAddress } from '@/types';
+import SettingsPanel from '@/components/account/SettingsPanel';
 import type { PickedLocation } from '@/components/vendor/LocationPicker';
 
 // Leaflet needs the browser, so it must not render on the server.
@@ -34,6 +35,16 @@ const LABEL_ICONS: Record<string, React.ReactNode> = {
 export default function AccountPage() {
   const router = useRouter();
   const { user, profile, isLoggedIn, loading: al, updateProfile } = useAuth();
+
+  // Who is this? Read from the profile, so admins, vendors and riders are no longer shown as customers.
+  const role = String(profile?.role ?? 'customer');
+  const isAdmin  = role === 'admin' || role === 'super_admin';
+  const isVendor = role === 'vendor';
+  const isRider  = role === 'rider';
+  const roleLabel = isAdmin ? 'Admin' : isVendor ? 'Vendor' : isRider ? 'Rider' : 'Customer';
+  const RoleIcon  = isAdmin ? ShieldCheck : isVendor ? Store : isRider ? Bike : ShoppingCart;
+  // Admins and vendors already have their own settings pages, so only customers (and riders) see this tab.
+  const showSettings = !isAdmin && !isVendor;
   const [tab, setTab] = useState<Tab>('profile');
   const [orders, setOrders] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
@@ -131,7 +142,7 @@ export default function AccountPage() {
     { id: 'orders',    label: 'Orders',       icon: <ShoppingCart className="w-4 h-4" /> },
     { id: 'addresses', label: 'Addresses',    icon: <MapPin className="w-4 h-4" /> },
     { id: 'reviews',   label: 'My Reviews',   icon: <Star className="w-4 h-4" /> },
-    { id: 'settings',  label: 'Settings',     icon: <Settings className="w-4 h-4" /> },
+    ...(showSettings ? [{ id: 'settings' as Tab, label: 'Settings', icon: <Settings className="w-4 h-4" /> }] : []),
   ];
 
   return (
@@ -146,10 +157,10 @@ export default function AccountPage() {
               <button className="absolute -bottom-1 -right-1 w-7 h-7 bg-white rounded-full flex items-center justify-center shadow-lg"><Camera className="w-3.5 h-3.5 text-orange-500" /></button>
             </div>
             <div>
-              <h1 className="text-2xl font-black">{profile?.full_name ?? 'Customer'}</h1>
+              <h1 className="text-2xl font-black">{profile?.full_name ?? roleLabel}</h1>
               <p className="text-orange-100 text-sm">{user?.email}</p>
               <span className="inline-flex items-center gap-1.5 mt-1.5 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-bold">
-                <ShoppingCart className="w-3 h-3" />Customer
+                <RoleIcon className="w-3 h-3" />{roleLabel}
               </span>
             </div>
           </div>
@@ -226,15 +237,8 @@ export default function AccountPage() {
               </motion.div>
             )}
 
-            {tab === 'settings' && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                <h3 className="font-black text-gray-900 mb-4">Change Password</h3>
-                <div className="space-y-4">
-                  <input type="password" placeholder="New password" className={ic} />
-                  <input type="password" placeholder="Confirm new password" className={ic} />
-                  <button className="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm">Update Password</button>
-                </div>
-              </motion.div>
+            {tab === 'settings' && showSettings && user && (
+              <SettingsPanel userId={user.id} deletionRequestedAt={(profile as any)?.deletion_requested_at ?? null} />
             )}
 
             {tab === 'addresses' && (

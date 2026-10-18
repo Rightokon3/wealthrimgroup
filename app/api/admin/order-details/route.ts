@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
   const pick = (r: any) => r && ({
     id: r.id, name: r.full_name ?? null, phone: r.phone ?? null, email: r.email ?? null,
     vehicle: r.vehicle_type ?? null, plate: r.vehicle_plate ?? null, city: r.city ?? null,
+    emergency: r.emergency_contact_phone ? `${r.emergency_contact_name ?? 'Contact'} · ${r.emergency_contact_phone}` : null,
   });
   const byId = new Map(((riderRows ?? []) as any[]).map(r => [r.id, r]));
 

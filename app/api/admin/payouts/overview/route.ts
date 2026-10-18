@@ -12,7 +12,8 @@ export async function GET(req: NextRequest) {
   const auth = await requireAdmin(req);
   if ('error' in auth) return auth.error;
 
-  const [bal, paystack, txs, log, settings] = await Promise.all([
+  const stuckCutoff = new Date(Date.now() - 2 * 60_000).toISOString();
+  const [bal, paystack, txs, log, settings, stuck] = await Promise.all([
     supabaseAdmin.rpc('admin_wallet_balances'),
     getPaystackBalance(),
     supabaseAdmin.from('wallet_transactions')
@@ -22,6 +23,8 @@ export async function GET(req: NextRequest) {
       .select('id,admin_email,user_id,role,amount,outcome,note,created_at')
       .order('created_at', { ascending: false }).limit(30),
     supabaseAdmin.from('wallet_settings').select('key,value').in('key', ['min_withdrawal']),
+    supabaseAdmin.from('wallet_transactions').select('id', { count: 'exact', head: true })
+      .eq('type', 'withdrawal').eq('status', 'processing').lt('created_at', stuckCutoff),
   ]);
   if (bal.error) return NextResponse.json({ error: bal.error.message }, { status: 500 });
 
@@ -43,6 +46,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     paystackBalance: paystack,                                   // null = could not reach Paystack
     minPayout: minWithdrawal,
+    stuckPayments: stuck.count ?? 0,                             // payouts still waiting for the bank's answer
     vendors: rows.filter(r => r.role === 'vendor').sort((a, b) => b.available - a.available),
     riders: rows.filter(r => r.role === 'rider' && r.available >= 0).sort((a, b) => b.available - a.available),
     owingRiders: rows.filter(r => r.role === 'rider' && r.available < 0).sort((a, b) => a.available - b.available),

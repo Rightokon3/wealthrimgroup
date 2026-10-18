@@ -188,7 +188,8 @@ export default function Navigation() {
                             <Bike className="w-4 h-4" /> Rider Dashboard
                           </Link>
                         )}
-                        {!isVendor && !isRider && !isAdmin && (<>
+                        {/* Everyone (customer, vendor, rider, admin) can order, so everyone gets these */}
+                        {(<>
                           <Link href="/account" onClick={() => setUserMenuOpen(false)}
                             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-700 transition-colors">
                             <User className="w-4 h-4" /> My Account
@@ -272,12 +273,15 @@ export default function Navigation() {
                         <Bike className="w-4 h-4" /> Rider Dashboard
                       </Link>
                     )}
-                    {!isVendor && !isRider && !isAdmin && (
-                      <Link href="/orders" onClick={() => setMobileOpen(false)}
-                        className="flex items-center gap-2.5 py-2.5 px-3 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
-                        <ShoppingCart className="w-4 h-4" /> My Orders
-                      </Link>
-                    )}
+                    {/* Everyone (customer, vendor, rider, admin) can order, so everyone gets these */}
+                    <Link href="/account" onClick={() => setMobileOpen(false)}
+                      className="flex items-center gap-2.5 py-2.5 px-3 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+                      <User className="w-4 h-4" /> My Account
+                    </Link>
+                    <Link href="/orders" onClick={() => setMobileOpen(false)}
+                      className="flex items-center gap-2.5 py-2.5 px-3 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+                      <ShoppingCart className="w-4 h-4" /> My Orders
+                    </Link>
                     <button onClick={handleSignOut} disabled={signingOut}
                       className="w-full flex items-center gap-2.5 text-left py-2.5 px-3 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
                       <LogOut className="w-4 h-4" /> {signingOut ? 'Signing out…' : 'Sign Out'}

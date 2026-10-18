@@ -3,6 +3,7 @@ import { sendOrderNotificationEmail } from '@/lib/email';
 import { sendVendorNotificationEmail, sendOrderConfirmationEmail, sendOrderStatusEmail, hasStatusEmail } from '@/lib/mailer';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendPushToUser } from '@/lib/web-push-server';
+import { getPrefs } from '@/lib/notificationPrefs';
 import { notifyAdmins } from '@/lib/notify-admins';
 import { isNearby } from '@/lib/riderMatch';
 import { getBaseUrl } from '@/lib/getBaseUrl';
@@ -208,7 +209,7 @@ async function notifyNearbyRiders(order: any, store: any) {
 
   const { data: riders, error } = await supabaseAdmin
     .from('riders')
-    .select('id, user_id, city, latitude, longitude')
+    .select('id, user_id, city, latitude, longitude, max_pickup_km, notify_new_orders')
     .eq('is_online', true)
     .eq('is_active', true);
 
@@ -220,7 +221,7 @@ async function notifyNearbyRiders(order: any, store: any) {
 
   const targets = chosen
     ? [chosen]
-    : riders.filter((r: any) => isNearby(r, store, RIDER_RADIUS_KM));
+    : riders.filter((r: any) => isNearby(r, store, Math.min(RIDER_RADIUS_KM, r.max_pickup_km ?? RIDER_RADIUS_KM)));
 
   const recipients = targets.filter((r: any) => r.user_id);
   if (recipients.length === 0) return;
@@ -242,7 +243,7 @@ async function notifyNearbyRiders(order: any, store: any) {
   );
 
   await Promise.allSettled(
-    recipients.map((r: any) =>
+    recipients.filter((r: any) => r.notify_new_orders !== false).map((r: any) =>
       sendPushToUser(r.user_id, { title, body: message, url: RIDER_DASHBOARD_URL })
     )
   );
@@ -262,6 +263,7 @@ async function notifyOrderStatus(orderId: string, status: string, baseUrl: strin
   const title   = status === 'on_the_way' ? 'Your order is on the way 🚴' : 'Order Update';
   const message = STATUS_MESSAGES[status] ?? `Your order ${order.order_number} status changed to ${status.replace(/_/g, ' ')}.`;
 
+  const customerPrefs = await getPrefs(order.customer_id);
   await Promise.all([
     supabaseAdmin.from('notifications').insert({
       user_id: order.customer_id,
@@ -270,12 +272,12 @@ async function notifyOrderStatus(orderId: string, status: string, baseUrl: strin
       body: `${order.order_number}: ${message}`,
       data: { order_id: order.id, status, url: trackUrl },
     }),
-    sendPushToUser(order.customer_id, { title, body: message, url: trackUrl }),
+    customerPrefs.orderPush ? sendPushToUser(order.customer_id, { title, body: message, url: trackUrl }) : Promise.resolve(),
   ]);
 
   // ── Customer: status update email (every change) ────────────────────
   // Wrapped so an email problem never blocks the in-app / push notification above.
-  if (hasStatusEmail(status)) {
+  if (hasStatusEmail(status) && customerPrefs.orderEmails) {
     try {
       const [{ data: cu }, { data: cp }] = await Promise.all([
         supabaseAdmin.auth.admin.getUserById(order.customer_id),

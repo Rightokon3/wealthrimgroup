@@ -66,11 +66,11 @@ export async function POST(req: NextRequest) {
     // 3) Nearby online riders, except everyone who already cancelled this order.
     const { data: riders } = await supabaseAdmin
       .from('riders')
-      .select('id, user_id, city, latitude, longitude')
+      .select('id, user_id, city, latitude, longitude, max_pickup_km, notify_new_orders')
       .eq('is_online', true)
       .eq('is_active', true);
     const targets = (riders ?? []).filter((r: any) =>
-      r.user_id && !declined.includes(r.id) && isNearby(r, store, RADIUS_KM));
+      r.user_id && !declined.includes(r.id) && isNearby(r, store, Math.min(RADIUS_KM, r.max_pickup_km ?? RADIUS_KM)));
 
     if (targets.length) {
       const fee = Number(order.delivery_fee ?? 0);
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
       const body = `${store?.name ?? 'A store'}${store?.city ? ` (${store.city})` : ''} → ${order.delivery_city ?? 'customer'}. Order ${order.order_number}${fee > 0 ? `, delivery fee ₦${fee.toLocaleString()}` : ''}.`;
       await supabaseAdmin.from('notifications').insert(
         targets.map((r: any) => ({ user_id: r.user_id, type: 'new_delivery', title, body, data: { order_id: order.id } })));
-      await Promise.allSettled(targets.map((r: any) => sendPushToUser(r.user_id, { title, body, url: '/rider/dashboard' })));
+      await Promise.allSettled(targets.filter((r: any) => r.notify_new_orders !== false).map((r: any) => sendPushToUser(r.user_id, { title, body, url: '/rider/dashboard' })));
     }
 
     // 4) Admins: the order is struggling.

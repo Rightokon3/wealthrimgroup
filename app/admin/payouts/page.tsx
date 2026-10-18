@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Wallet, Landmark, Loader2, AlertCircle, CheckCircle, RefreshCw, ShieldCheck, X, Bike, Store, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -9,7 +9,7 @@ interface Person { user_id: string; role: 'vendor' | 'rider'; name: string; avai
 interface Tx { id: string; name: string; role: string; type: string; amount: number; status: string; description: string | null; created_at: string }
 interface Log { id: string; name: string; admin_email: string; amount: number; outcome: string; note: string | null; created_at: string }
 interface Overview {
-  paystackBalance: number | null; minPayout: number;
+  paystackBalance: number | null; minPayout: number; stuckPayments: number;
   vendors: Person[]; riders: Person[]; owingRiders: Person[];
   totals: { owedToVendors: number; owedToRiders: number; riderCashOwed: number };
   transactions: Tx[]; payoutLog: Log[];
@@ -17,6 +17,12 @@ interface Overview {
 
 const naira = (n: number) => `${n < 0 ? '-' : ''}₦${Math.abs(Math.round(n)).toLocaleString('en-NG')}`;
 const when = (d: string) => new Date(d).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+// Every request has a time limit, so a bad network can never leave the page spinning forever.
+async function timedFetch(url: string, init: RequestInit, ms = 30000) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('offline');
+  return fetch(url, { ...init, signal: AbortSignal.timeout(ms) });
+}
 
 async function headers() {
   const { data: { session } } = await supabase.auth.getSession();
@@ -34,42 +40,89 @@ export default function AdminPayoutsPage() {
   const [key, setKey] = useState('');
   const [paying, setPaying] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [dialogMsg, setDialogMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [checking, setChecking] = useState(false);
+  const autoChecked = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true); setErr('');
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { router.replace('/auth/login?next=/admin/payouts'); return; }
-    const res = await fetch('/api/admin/payouts/overview', { headers: await headers(), cache: 'no-store' });
+    let res: Response;
+    try {
+      res = await timedFetch('/api/admin/payouts/overview', { headers: await headers(), cache: 'no-store' }, 25000);
+    } catch {
+      setErr('No internet connection, or it is too slow. Check your network and try again.');
+      setLoading(false);
+      return;
+    }
     const j = await res.json().catch(() => ({}));
     if (res.status === 401) { router.replace('/auth/login?next=/admin/payouts'); return; }
     if (!res.ok) { setErr(res.status === 403 ? 'You are not allowed to view this page.' : (j.error ?? 'Could not load.')); setLoading(false); return; }
     setData(j); setLoading(false);
+    // payouts that never got an answer (bad network): ask Paystack and settle them in the background
+    if ((j.stuckPayments ?? 0) > 0 && !autoChecked.current) {
+      autoChecked.current = true;
+      checkStuck(false);
+    }
   }, [router]);
 
   useEffect(() => { load(); }, [load]);
 
   function openPay(p: Person) {
-    setTarget(p); setAmount(String(Math.max(0, Math.floor(p.available)))); setMsg(null);
+    setTarget(p); setAmount(String(Math.max(0, Math.floor(p.available)))); setMsg(null); setDialogMsg(null);
     setKey(crypto.randomUUID());   // one key per dialog: a double-click can never pay twice
+  }
+
+  async function checkStuck(announce = true) {
+    setChecking(true);
+    try {
+      const res = await timedFetch('/api/admin/payouts/reconcile', { method: 'POST', headers: await headers() }, 45000);
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && announce) setMsg({ ok: true, text: `Checked ${j.checked ?? 0} payment(s): ${j.paid ?? 0} paid, ${j.failed ?? 0} returned, ${j.waiting ?? 0} still with the bank.` });
+    } catch {
+      if (announce) setMsg({ ok: false, text: 'Could not check right now (network). Try again in a moment.' });
+    }
+    setChecking(false);
+    load();
   }
 
   async function pay() {
     if (!target) return;
-    setPaying(true); setMsg(null);
-    const res = await fetch('/api/admin/payouts/pay', {
-      method: 'POST', headers: await headers(),
-      body: JSON.stringify({ user_id: target.user_id, amount: Math.floor(Number(amount)), key }),
-    });
+    setPaying(true); setMsg(null); setDialogMsg(null);
+    let res: Response;
+    try {
+      res = await timedFetch('/api/admin/payouts/pay', {
+        method: 'POST', headers: await headers(),
+        body: JSON.stringify({ user_id: target.user_id, amount: Math.floor(Number(amount)), key }),
+      }, 40000);
+    } catch {
+      // The request may or may not have reached the server. The same key is safe to send again.
+      setPaying(false);
+      setDialogMsg({ ok: false, text: 'Poor network. We could not confirm this payment. Your money is safe: it is either on its way or it will be returned automatically. It is safe to press Send again. It will not pay twice.' });
+      return;
+    }
     const j = await res.json().catch(() => ({}));
     setPaying(false);
-    if (!res.ok) { setMsg({ ok: false, text: j.error ?? 'Payment failed.' }); return; }
+
+    if (res.status === 202 && j.unsure) { setDialogMsg({ ok: false, text: j.error }); return; }
+    if (!res.ok) {
+      if (j.startNew) setKey(crypto.randomUUID());   // that attempt is finished; the next try is a fresh payment
+      setDialogMsg({ ok: false, text: j.error ?? 'Payment failed.' });
+      return;
+    }
     setTarget(null);
-    setMsg({ ok: true, text: j.status === 'success' ? 'Paid. The money has been sent.' : 'Payment sent to the bank. It will show as paid shortly.' });
+    setMsg({ ok: true, text: j.status === 'success' ? 'Paid. The money has been sent.' : 'Sent to the bank. It will show as paid shortly.' });
     load();
   }
 
   if (loading && !data) return <div className="p-6 text-gray-400">Loading…</div>;
-  if (err) return <div className="p-6"><div className="max-w-md mx-auto bg-red-50 border border-red-200 text-red-400 rounded-2xl p-5 flex gap-3"><AlertCircle className="w-5 h-5 flex-shrink-0" />{err}</div></div>;
+  if (err) return (
+    <div className="p-6"><div className="max-w-md mx-auto bg-red-950 border border-red-800 text-red-400 rounded-2xl p-5">
+      <div className="flex gap-3"><AlertCircle className="w-5 h-5 flex-shrink-0" />{err}</div>
+      <button onClick={load} className="mt-4 px-4 py-2 rounded-xl bg-red-900 text-red-100 text-sm font-bold">Try again</button>
+    </div></div>
+  );
   if (!data) return null;
 
   const list = tab === 'vendors' ? data.vendors : tab === 'riders' ? data.riders : data.owingRiders;
@@ -90,6 +143,15 @@ export default function AdminPayoutsPage() {
         {msg && (
           <div className={`flex gap-3 p-4 rounded-2xl border text-sm font-medium ${msg.ok ? 'bg-green-950 border-green-800 text-green-300' : 'bg-red-950 border-red-800 text-red-400'}`}>
             {msg.ok ? <CheckCircle className="w-5 h-5 flex-shrink-0" /> : <AlertCircle className="w-5 h-5 flex-shrink-0" />}{msg.text}
+          </div>
+        )}
+
+        {data.stuckPayments > 0 && (
+          <div className="flex items-center justify-between gap-3 p-4 rounded-2xl border border-amber-800 bg-amber-950 text-amber-300 text-sm">
+            <span>{data.stuckPayments} payment(s) are still waiting for the bank's answer. Your money is safe. We check these automatically.</span>
+            <button onClick={() => checkStuck(true)} disabled={checking} className="px-3 py-2 rounded-xl bg-amber-900 text-amber-100 font-bold flex-shrink-0 disabled:opacity-60">
+              {checking ? 'Checking…' : 'Check now'}
+            </button>
           </div>
         )}
 
@@ -191,7 +253,7 @@ export default function AdminPayoutsPage() {
             </div>
             {amt > target.available && <p className="text-sm text-red-400">That is more than they are owed.</p>}
             {lowPaystack && <p className="text-sm text-red-400">Not enough in Paystack ({naira(data.paystackBalance!)}).</p>}
-            {msg && !msg.ok && <p className="text-sm text-red-400 flex gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />{msg.text}</p>}
+            {dialogMsg && <p className="text-sm text-amber-300 flex gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />{dialogMsg.text}</p>}
             <p className="text-xs text-gray-400">This sends real money from your Paystack balance and cannot be undone.</p>
             <button onClick={pay} disabled={paying || !amt || amt > target.available || amt < data.minPayout || !!lowPaystack}
               className="w-full py-3.5 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-black flex items-center justify-center gap-2 disabled:opacity-40">

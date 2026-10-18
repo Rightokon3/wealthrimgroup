@@ -1,18 +1,27 @@
 // Server-only Paystack helpers for payouts. Never import into a 'use client' file.
 const API = 'https://api.paystack.co';
 
+// Every Paystack call has a time limit, so a bad network can never leave a request hanging forever.
+const TIMEOUT_MS = 20000;
+
 async function call(path: string, method: 'GET' | 'POST', body?: any) {
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-    cache: 'no-store',
-  });
-  const json: any = await res.json().catch(() => ({}));
-  return { ok: res.ok && json.status === true, json, message: json.message as string | undefined };
+  try {
+    const res = await fetch(`${API}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    const json: any = await res.json().catch(() => ({}));
+    return { ok: res.ok && json.status === true, json, message: json.message as string | undefined, httpStatus: res.status, network: false };
+  } catch {
+    // timed out or no connection: we do NOT know whether Paystack received it
+    return { ok: false, json: {} as any, message: 'The network is unstable. Please try again.', httpStatus: 0, network: true };
+  }
 }
 
 export async function listBanks(): Promise<{ name: string; code: string }[]> {
@@ -32,8 +41,9 @@ export async function listBanks(): Promise<{ name: string; code: string }[]> {
 export async function resolveAccount(accountNumber: string, bankCode: string): Promise<{ name?: string; message?: string; rateLimited?: boolean }> {
   const res = await fetch(
     `${API}/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`,
-    { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }, cache: 'no-store' },
-  );
+    { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }, cache: 'no-store', signal: AbortSignal.timeout(TIMEOUT_MS) },
+  ).catch(() => null);
+  if (!res) return { message: 'The network is unstable. Please try again.' };
   const json: any = await res.json().catch(() => ({}));
   if (res.ok && json.status === true && json.data?.account_name) return { name: json.data.account_name as string };
   console.error('[paystack resolve]', res.status, json?.message);
@@ -48,7 +58,10 @@ export async function createRecipient(name: string, accountNumber: string, bankC
   return r.json.data.recipient_code as string;
 }
 
-/** status: 'success' | 'pending' | 'otp' | 'failed' ... (otp = Paystack wants a confirmation code) */
+/**
+ * status: 'success' | 'pending' | 'otp' | 'failed' ...
+ * unknown = true means the network failed, so we cannot tell if Paystack received it. NEVER treat that as a failure.
+ */
 export async function sendTransfer(opts: { amountNaira: number; recipient: string; reference: string; reason: string }) {
   const r = await call('/transfer', 'POST', {
     source: 'balance',
@@ -57,7 +70,34 @@ export async function sendTransfer(opts: { amountNaira: number; recipient: strin
     reference: opts.reference,
     reason: opts.reason,
   });
-  return { ok: r.ok, status: (r.json?.data?.status as string | undefined), message: r.message };
+  const unknown = r.network || r.httpStatus >= 500;
+  return { ok: r.ok, status: (r.json?.data?.status as string | undefined), message: r.message, unknown };
+}
+
+export type TransferState = 'success' | 'pending' | 'failed' | 'reversed' | 'not_found' | 'unknown';
+
+/** Asks Paystack what really happened to a transfer, by our reference. The source of truth. */
+export async function verifyTransfer(reference: string): Promise<TransferState> {
+  const r = await call(`/transfer/verify/${encodeURIComponent(reference)}`, 'GET');
+  if (r.network || r.httpStatus >= 500) return 'unknown';
+  if (r.httpStatus === 404) return 'not_found';
+  if (!r.ok) return 'unknown';
+  const st = String(r.json?.data?.status ?? '');
+  if (st === 'success') return 'success';
+  if (st === 'failed') return 'failed';
+  if (st === 'reversed') return 'reversed';
+  return 'pending';   // pending, queued, otp, processing...
+}
+
+/** Asks Paystack whether a customer/rider payment really succeeded. */
+export async function verifyTransaction(reference: string): Promise<{ state: 'success' | 'failed' | 'pending' | 'unknown'; amountNaira?: number; metadata?: any }> {
+  const r = await call(`/transaction/verify/${encodeURIComponent(reference)}`, 'GET');
+  if (r.network || r.httpStatus >= 500 || (!r.ok && r.httpStatus !== 400 && r.httpStatus !== 404)) return { state: 'unknown' };
+  if (!r.ok) return { state: 'failed' };
+  const st = String(r.json?.data?.status ?? '');
+  if (st === 'success') return { state: 'success', amountNaira: Number(r.json.data.amount) / 100, metadata: r.json.data.metadata };
+  if (st === 'abandoned' || st === 'failed') return { state: 'failed' };
+  return { state: 'pending' };
 }
 
 /** Creates a Paystack payment page the rider can pay with a bank transfer or card. */

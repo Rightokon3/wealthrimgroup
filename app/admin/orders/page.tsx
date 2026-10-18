@@ -53,6 +53,7 @@ function PersonCard({ title, p }: { title: string; p: any }) {
       <Row label="Email" value={p.email} />
       <Row label="Vehicle" value={[p.vehicle, p.plate].filter(Boolean).join(' · ')} />
       <Row label="City" value={p.city} />
+      <Row label="Emergency contact" value={p.emergency} />
     </div>
   );
 }
