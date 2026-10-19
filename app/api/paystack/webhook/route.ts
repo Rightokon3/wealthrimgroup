@@ -6,6 +6,7 @@ import { notifyAdmins } from '@/lib/notify-admins';
 import { getBaseUrl } from '@/lib/getBaseUrl';
 import { sendRefundProcessedEmail } from '@/lib/mailer';
 import { normalizeRefundStatus } from '@/lib/paystackRefund';
+import { settleCustomerPayment } from '@/lib/customerPayment';
 
 // Service-role client — webhooks have no user session, so this bypasses RLS.
 // Keep SUPABASE_SERVICE_ROLE_KEY server-only, never exposed to the client.
@@ -76,41 +77,110 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true });
   }
 
+  // ── Card payment (Paystack popup) ──
+  // Confirms the order even if the customer's phone lost network right after paying.
+  if (event.event === 'charge.success' && event.data?.channel !== 'dedicated_nuban') {
+    const reference = event.data?.reference as string | undefined;
+    if (reference) {
+      try {
+        const r = await settleCustomerPayment(reference, Number(event.data.amount) / 100);
+        if (r.result === 'underpaid') {
+          await notifyAdmins({
+            type: 'payment_underpaid',
+            title: 'Customer paid less than the order total',
+            body: `Reference ${reference}: paid ₦${Number(r.paidNaira).toLocaleString()}, order total ₦${Number(r.total).toLocaleString()}. The order was NOT marked paid.`,
+            audience: 'admins_and_super',
+            url: '/admin/orders',
+          }).catch(() => {});
+        }
+        // The order may not be saved yet (phone still busy creating it). Ask Paystack to
+        // send this again later - the checkout page also confirms it by itself.
+        if (r.result === 'no_order' && reference.startsWith('drovo_')) {
+          return NextResponse.json({ received: false, retry: true }, { status: 409 });
+        }
+      } catch (e) {
+        console.error('card payment webhook error:', e);
+        return NextResponse.json({ received: false }, { status: 500 }); // Paystack will retry
+      }
+    }
+    return NextResponse.json({ received: true });
+  }
+
+  // ── Bank transfer to the customer's dedicated account ──
   if (event.event === 'charge.success' && event.data?.channel === 'dedicated_nuban') {
     const customerCode = event.data.customer?.customer_code;
-    const amountNaira = event.data.amount / 100;
-    const paystackReference = event.data.reference;
+    const amountNaira = Number(event.data.amount) / 100;
+    const paystackReference = event.data.reference as string;
 
     if (!customerCode) return NextResponse.json({ received: true });
 
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('id')
-      .eq('paystack_customer_code', customerCode)
-      .single();
+    try {
+      // Paystack can send the same event twice - never process one transfer twice.
+      const { data: already } = await supabaseAdmin.from('orders').select('id')
+        .eq('payment_reference', paystackReference).maybeSingle();
+      if (already) return NextResponse.json({ received: true });
 
-    if (!profile) return NextResponse.json({ received: true });
+      const { data: profile } = await supabaseAdmin
+        .from('profiles').select('id').eq('paystack_customer_code', customerCode).maybeSingle();
 
-    // Oldest matching pending transfer order for this customer at this amount.
-    const { data: order } = await supabaseAdmin
-      .from('orders')
-      .select('id')
-      .eq('customer_id', profile.id)
-      .eq('payment_method', 'transfer')
-      .eq('payment_status', 'pending')
-      .eq('total', amountNaira)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .single();
+      const flagUnmatched = async (reason: string) => {
+        await supabaseAdmin.from('unmatched_transfers').upsert(
+          { reference: paystackReference, customer_id: profile?.id ?? null, amount: amountNaira, reason },
+          { onConflict: 'reference', ignoreDuplicates: true });
+        await notifyAdmins({
+          type: 'transfer_unmatched',
+          title: 'A bank transfer needs checking',
+          body: `₦${amountNaira.toLocaleString()} arrived (ref ${paystackReference}) but ${reason}. Check it in Paystack and the orders page.`,
+          audience: 'admins_and_super',
+          url: '/admin/orders',
+        }).catch(() => {});
+      };
 
-    if (order) {
-      await supabaseAdmin
+      if (!profile) { await flagUnmatched('no customer matches this account'); return NextResponse.json({ received: true }); }
+
+      // This customer's waiting transfer orders, oldest first.
+      const { data: pending } = await supabaseAdmin
         .from('orders')
-        .update({ payment_status: 'paid', payment_reference: paystackReference })
-        .eq('id', order.id);
+        .select('id, total, order_number')
+        .eq('customer_id', profile.id)
+        .eq('payment_method', 'transfer')
+        .eq('payment_status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(20);
+
+      // Exact amount first; otherwise the oldest order the money fully covers.
+      const list = pending ?? [];
+      const order =
+        list.find(o => Math.abs(Number(o.total) - amountNaira) < 1) ??
+        list.find(o => Number(o.total) <= amountNaira + 1);
+
+      if (!order) {
+        await flagUnmatched(list.length
+          ? 'it is LESS than the customer\'s order total (the order stays unpaid)'
+          : 'the customer has no unpaid transfer order');
+        return NextResponse.json({ received: true });
+      }
+
+      const { data: updated } = await supabaseAdmin.from('orders').update({
+        payment_status: 'paid',
+        payment_reference: paystackReference,
+        paid_amount: amountNaira,
+        payment_verified_at: new Date().toISOString(),
+      }).eq('id', order.id).eq('payment_status', 'pending').select('id').maybeSingle();
+
+      if (updated && amountNaira > Number(order.total) + 1) {
+        await notifyAdmins({
+          type: 'transfer_overpaid',
+          title: 'Customer sent more than the order total',
+          body: `Order ${order.order_number}: total ₦${Number(order.total).toLocaleString()}, received ₦${amountNaira.toLocaleString()}. The extra ₦${(amountNaira - Number(order.total)).toLocaleString()} may need refunding.`,
+          audience: 'admins_and_super',
+          url: '/admin/orders',
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.error('transfer webhook error:', e);
+      return NextResponse.json({ received: false }, { status: 500 }); // Paystack will retry
     }
-    // If no match found, it's logged in Paystack's dashboard for manual reconciliation —
-    // consider also inserting into a `unmatched_transfers` table here for your own safety net.
   }
 
   return NextResponse.json({ received: true });

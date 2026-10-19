@@ -101,6 +101,8 @@ function CheckoutInner() {
   // Live payment status for transfer orders — flips 'pending' -> 'paid'
   // automatically the moment the Paystack webhook confirms the transfer.
   const [orderPaymentStatus, setOrderPaymentStatus] = useState<'pending' | 'paid'>('pending');
+  const [payRef, setPayRef] = useState('');          // card reference, shown if confirmation is slow
+  const recoveryTried = useRef(false);
 
   // Validation modal state
   const [showValidationModal, setShowValidationModal] = useState(false);
@@ -257,7 +259,7 @@ function CheckoutInner() {
 
   const isRealEstate = store?.category === 'real_estate';
   const deliveryFee  = isRealEstate ? 0 : (feeResult?.fee ?? 100);
-  const platformFee  = Math.round(subtotal * 0.10);
+  const platformFee  = Math.round(subtotal * 0.12);
   const total        = subtotal + deliveryFee;
 
   // ── Fetch (or create) this customer's dedicated Paystack account ──
@@ -369,11 +371,26 @@ function CheckoutInner() {
     runPaymentFlow();
   }
 
+  async function orderHasItems(orderId: string) {
+    const { count } = await supabase.from('order_items')
+      .select('id', { count: 'exact', head: true }).eq('order_id', orderId);
+    return (count ?? 0) > 0;
+  }
+
   // ── Create the order in Supabase, returns the created row ──────
+  // With a payment reference this is safe to call again after a bad network:
+  // the same reference always gives back the same order (never a duplicate).
   async function createOrder(paystackRef?: string) {
     if (!user || !store) throw new Error('Not ready to place order.');
 
-    const { data: order, error: oErr } = await supabase
+    let existing: { id: string; order_number: string } | null = null;
+    if (paystackRef) {
+      const { data: ex } = await supabase.from('orders')
+        .select('id, order_number').eq('payment_reference', paystackRef).maybeSingle();
+      existing = ex ?? null;
+    }
+
+    const { data: order, error: oErr } = existing ? { data: existing, error: null } : await supabase
       .from('orders')
       .insert([{
         customer_id:      user.id,
@@ -391,7 +408,7 @@ function CheckoutInner() {
         delivery_fee:     deliveryFee,
         total,
         payment_method:   payment,
-        payment_status:   paystackRef ? 'paid' : 'pending',
+        payment_status:   'pending', // the server marks it paid only after checking Paystack + the amount
         payment_reference: paystackRef ?? null,
         assigned_rider_id: isRealEstate ? null : (riderRef.current?.id ?? null),
       }])
@@ -400,7 +417,7 @@ function CheckoutInner() {
 
     if (oErr) throw new Error(oErr.message);
 
-    const { error: iErr } = await supabase.from('order_items').insert(
+    const { error: iErr } = (existing && (await orderHasItems(order.id))) ? { error: null } : await supabase.from('order_items').insert(
       items.map(i => ({
         order_id:       order.id,
         product_id:     i.product.id,
@@ -414,9 +431,10 @@ function CheckoutInner() {
       }))
     );
     if (iErr) throw new Error(iErr.message);
+    if (!order) throw new Error('Order was not created.');
 
     // Optionally remember a brand-new address for next time (never blocks the order)
-    if (showNewAddr && !selectedAddrId && saveForLater && customerCoords && address.trim() && city.trim()) {
+    if (!existing && showNewAddr && !selectedAddrId && saveForLater && customerCoords && address.trim() && city.trim()) {
       supabase.from('saved_addresses').insert({
         user_id:    user.id,
         label:      newLabel,
@@ -431,7 +449,7 @@ function CheckoutInner() {
       });
     }
 
-    fetch('/api/notify-vendor', {
+    if (!existing) fetch('/api/notify-vendor', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ orderId: order.id }),
@@ -483,6 +501,66 @@ function CheckoutInner() {
   }
 
   // ── Card payment via Paystack ──────────────────────────────────
+  // Money-safety rules:
+  //  1. The reference is written down on the phone the moment Paystack says "paid".
+  //  2. The order is created from that reference and can be retried safely.
+  //  3. Confirmation retries on a bad network. A timeout is NEVER shown as "failed".
+  //  4. If the page is closed/refreshed, the recovery effect below finishes the job.
+  //  5. The webhook on the server confirms the payment even if the phone never comes back.
+  const refKey = user ? `drovo_card_ref_${user.id}` : null;
+  const rememberRef = (r: string) => { try { if (refKey) localStorage.setItem(refKey, r); } catch { /* ignore */ } };
+  const forgetRef   = () => { try { if (refKey) localStorage.removeItem(refKey); } catch { /* ignore */ } };
+
+  async function verifyWithRetry(reference: string): Promise<{ ok: true | false | null; message?: string }> {
+    for (let i = 0; i < 8; i++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20000);
+      try {
+        const r = await fetch('/api/verify-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reference }),
+          signal: ctrl.signal,
+        });
+        const j = await r.json();
+        if (j.verified) return { ok: true };
+        if (!j.retry) return { ok: false, message: j.error };
+      } catch { /* no network - try again */ }
+      finally { clearTimeout(timer); }
+      await new Promise(res => setTimeout(res, 2500 * (i + 1)));
+    }
+    return { ok: null }; // still not sure - NOT a failure
+  }
+
+  async function createOrderWithRetry(reference: string) {
+    let lastErr: any;
+    for (let i = 0; i < 4; i++) {
+      try { return await createOrder(reference); }
+      catch (e) { lastErr = e; await new Promise(res => setTimeout(res, 2000 * (i + 1))); }
+    }
+    throw lastErr;
+  }
+
+  async function finishCardPayment(reference: string) {
+    setPayRef(reference);
+    rememberRef(reference);
+    const order = await createOrderWithRetry(reference);
+    clearCart();
+    setStoreName(store?.name ?? '');
+    setOrderPaymentStatus('pending');
+    setOrderId(order.id);
+    setOrderNum(order.order_number);
+    setPlacing(false);
+
+    const v = await verifyWithRetry(reference);
+    if (v.ok === true) { setOrderPaymentStatus('paid'); forgetRef(); }
+    else if (v.ok === false) {
+      forgetRef();
+      setError(v.message || 'We could not confirm this payment. Please contact support with reference ' + reference);
+    }
+    // ok === null: keep the reference; the live watcher below flips the screen when the server confirms.
+  }
+
   async function payWithCard() {
     if (!validateForm()) return;
     const email = user?.email ?? profile?.email;
@@ -502,24 +580,10 @@ function CheckoutInner() {
         callback: (response: any) => {
           (async () => {
             try {
-              const res = await fetch('/api/verify-payment', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ reference: response.reference }),
-              });
-              const result = await res.json();
-              if (!result.verified) {
-                setError('Payment could not be verified. If you were charged, contact support with reference ' + response.reference);
-                setPlacing(false);
-                return;
-              }
-              const order = await createOrder(result.reference);
-              clearCart();
-              setStoreName(store?.name ?? '');
-              setOrderId(order.id);
-              setOrderNum(order.order_number);
+              await finishCardPayment(response.reference);
             } catch (e: any) {
-              setError(e.message ?? 'Something went wrong confirming your payment.');
+              setError('Your payment went through but we could not finish your order yet. Do NOT pay again. Reference: '
+                + response.reference + '. Refresh this page and we will complete it automatically.');
             } finally {
               setPlacing(false);
             }
@@ -534,6 +598,28 @@ function CheckoutInner() {
       setPlacing(false);
     }
   }
+
+  // If the customer paid but the page closed / lost network before the order was saved,
+  // finish it as soon as they come back to checkout.
+  useEffect(() => {
+    if (!user || !draftReady || orderId || recoveryTried.current) return;
+    let ref: string | null = null;
+    try { ref = localStorage.getItem(`drovo_card_ref_${user.id}`); } catch { /* ignore */ }
+    if (!ref) return;
+    const reference = ref;
+    (async () => {
+      const { data: ex } = await supabase.from('orders')
+        .select('id, order_number').eq('payment_reference', reference).maybeSingle();
+      if (!ex && (items.length === 0 || !address.trim() || !city.trim() || !phone.trim())) return; // wait for the cart/draft
+      recoveryTried.current = true;
+      setPayment('card');
+      setPlacing(true);
+      try { await finishCardPayment(reference); }
+      catch { setError('We are still finishing your paid order. Do NOT pay again. Reference: ' + reference + '. Refresh to retry.'); }
+      finally { setPlacing(false); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, draftReady, orderId, items.length, address, city, phone]);
 
   function handlePlaceOrderClick() {
     if (!validateForm()) return;
@@ -563,11 +649,16 @@ function CheckoutInner() {
     payWithTransfer();
   }
 
-  // ── Realtime: watch this order's payment_status once placed ────
-  // Flips the success screen from "pending" to "confirmed" the moment
-  // the Paystack webhook marks the order paid — no manual staff check.
+  // ── Watch this order's payment_status once placed (card + transfer) ─
+  // Flips the success screen to "confirmed" the moment the server marks the order paid.
+  // Realtime is the fast path; a 5-second check is the fallback for bad networks.
   useEffect(() => {
-    if (!orderId || payment !== 'transfer') return;
+    if (!orderId || (payment !== 'transfer' && payment !== 'card') || orderPaymentStatus === 'paid') return;
+
+    const check = async () => {
+      const { data } = await supabase.from('orders').select('payment_status').eq('id', orderId).single();
+      if (data?.payment_status === 'paid') { setOrderPaymentStatus('paid'); forgetRef(); }
+    };
 
     const channel = supabase
       .channel(`order-payment-${orderId}`)
@@ -575,25 +666,16 @@ function CheckoutInner() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${orderId}` },
         (payload) => {
-          const newStatus = (payload.new as any)?.payment_status;
-          if (newStatus === 'paid') setOrderPaymentStatus('paid');
+          if ((payload.new as any)?.payment_status === 'paid') { setOrderPaymentStatus('paid'); forgetRef(); }
         }
       )
       .subscribe();
 
-    // In case the webhook lands between order creation and subscription
-    // setup, do one immediate check too.
-    supabase
-      .from('orders')
-      .select('payment_status')
-      .eq('id', orderId)
-      .single()
-      .then(({ data }) => {
-        if (data?.payment_status === 'paid') setOrderPaymentStatus('paid');
-      });
-
-    return () => { supabase.removeChannel(channel); };
-  }, [orderId, payment]);
+    check();
+    const poll = setInterval(check, 5000);
+    return () => { clearInterval(poll); supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId, payment, orderPaymentStatus]);
 
   // ── Loading ───────────────────────────────────────────────────
   if (al) return (
@@ -621,7 +703,7 @@ function CheckoutInner() {
           <span className="font-bold text-gray-700">{storeName}</span>.
         </p>
 
-        {payment === 'transfer' && (
+        {(payment === 'transfer' || payment === 'card') && (
           <div className={`flex items-center justify-center gap-2 mb-5 px-4 py-2.5 rounded-xl border text-sm font-bold ${
             orderPaymentStatus === 'paid'
               ? 'bg-green-50 border-green-200 text-green-700'
@@ -629,15 +711,23 @@ function CheckoutInner() {
           }`}>
             {orderPaymentStatus === 'paid'
               ? <><CheckCircle className="w-4 h-4" /> Payment confirmed</>
-              : <><Loader2 className="w-4 h-4 animate-spin" /> Waiting for your transfer to land — this updates automatically</>
+              : <><Loader2 className="w-4 h-4 animate-spin" /> {payment === 'card' ? 'Confirming your payment — please do not pay again' : 'Waiting for your transfer to land — this updates automatically'}</>
             }
           </div>
+        )}
+        {payment === 'card' && orderPaymentStatus === 'pending' && payRef && (
+          <p className="text-xs text-gray-400 mb-4 -mt-2">
+            Payment reference: <span className="font-mono font-bold text-gray-600">{payRef}</span>. This page updates by itself. If you were charged, your order is safe.
+          </p>
+        )}
+        {error && (
+          <p className="text-sm text-red-600 font-medium mb-4">{error}</p>
         )}
 
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm mb-6 text-left space-y-2">
           <div className="flex justify-between text-sm"><span className="text-gray-500">Order #</span><span className="font-mono font-black text-xs">{orderNum}</span></div>
           <div className="flex justify-between text-sm"><span className="text-gray-500">Subtotal</span><span className="font-bold">₦{subtotal.toLocaleString()}</span></div>
-          <div className="flex justify-between text-sm"><span className="text-gray-500">Platform fee (10%)</span><span className="font-bold text-orange-600">₦{platformFee.toLocaleString()}</span></div>
+          <div className="flex justify-between text-sm"><span className="text-gray-500">Platform fee (12%)</span><span className="font-bold text-orange-600">₦{platformFee.toLocaleString()}</span></div>
           {!isRealEstate && (
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Delivery {feeResult && <span className="text-xs text-gray-400">({feeResult.tier})</span>}</span>
@@ -1107,7 +1197,7 @@ function CheckoutInner() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-gray-500"><span>Items subtotal</span><span>₦{subtotal.toLocaleString()}</span></div>
                 <div className="flex justify-between text-orange-600 font-semibold">
-                  <span>Drovo fee (10%)</span><span>₦{platformFee.toLocaleString()}</span>
+                  <span>Drovo fee (12%)</span><span>₦{platformFee.toLocaleString()}</span>
                 </div>
                 {!isRealEstate && (
                   <div className="flex justify-between text-gray-500">
@@ -1121,7 +1211,7 @@ function CheckoutInner() {
               </div>
               <div className="mt-3 p-3 rounded-xl bg-gray-50 border border-gray-100 text-xs text-gray-400 space-y-1">
                 <p>• Delivery fee starts at ₦3,000 and reduces the closer you are to the vendor</p>
-                <p>• 10% platform fee is deducted — vendor receives 90%</p>
+                <p>• 12% platform fee is deducted — vendor receives 88%</p>
               </div>
             </div>
 
@@ -1224,7 +1314,7 @@ function CheckoutInner() {
                 )}
                 <div className="border-t border-gray-100 pt-4 space-y-1.5 text-sm mb-5">
                   <div className="flex justify-between text-gray-500"><span>Subtotal</span><span>₦{subtotal.toLocaleString()}</span></div>
-                  <div className="flex justify-between text-orange-600 font-semibold"><span>Drovo fee (10%)</span><span>₦{platformFee.toLocaleString()}</span></div>
+                  <div className="flex justify-between text-orange-600 font-semibold"><span>Drovo fee (12%)</span><span>₦{platformFee.toLocaleString()}</span></div>
                   {!isRealEstate && (
                     <div className="flex justify-between text-gray-500">
                       <span>Delivery {feeResult && `(${feeResult.tier})`}</span>
