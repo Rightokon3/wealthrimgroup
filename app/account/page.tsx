@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { User, ShoppingCart, Settings, Camera, CheckCircle, Star, MapPin, Plus, Trash2, Home, Briefcase, ShieldCheck, Store, Bike } from 'lucide-react';
 import { SavedAddress } from '@/types';
 import SettingsPanel from '@/components/account/SettingsPanel';
+import CityPicker from '@/components/CityPicker';
 import type { PickedLocation } from '@/components/vendor/LocationPicker';
 
 // Leaflet needs the browser, so it must not render on the server.
@@ -74,6 +75,7 @@ export default function AccountPage() {
   }
 
   const handleSave = async () => {
+    if (!form.city.trim()) { alert('Please search for and choose your city.'); return; }
     setSaving(true); await updateProfile(form); setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -186,7 +188,7 @@ export default function AccountPage() {
                   <div><label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Email</label><input type="email" value={user?.email ?? ''} disabled className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm bg-gray-100 text-gray-400 cursor-not-allowed" /></div>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div><label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Phone</label><input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} className={ic} /></div>
-                    <div><label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">City</label><input type="text" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} className={ic} /></div>
+                    <div><label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">City</label><CityPicker value={form.city} onChange={v => setForm(f => ({ ...f, city: v }))} className={ic} /></div>
                   </div>
                   <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-sm hover:from-orange-600 hover:to-red-700 disabled:opacity-60">
                     {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Saving...</> : saved ? <><CheckCircle className="w-4 h-4" />Saved!</> : 'Save Changes'}
