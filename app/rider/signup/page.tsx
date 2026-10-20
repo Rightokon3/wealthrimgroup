@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { Bike, Car, Gauge, Eye, EyeOff, ChevronRight, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import type { PickedLocation } from '@/components/vendor/LocationPicker';
+import CityPicker from '@/components/CityPicker';
 
 // Leaflet needs the browser, so it must not render on the server.
 const LocationPicker = dynamic(() => import('@/components/vendor/LocationPicker'), {
@@ -52,7 +53,7 @@ export default function RiderSignup() {
     setError('');
     setForm(f => ({
       ...f,
-      city:  loc.city  ? loc.city  : f.city,
+      city:  loc.city ? loc.city : f.city,
       state: loc.state ? loc.state : f.state,
     }));
   }
@@ -72,7 +73,7 @@ export default function RiderSignup() {
       setError('Please pin the area where you are based on the map.'); return false;
     }
     if (!form.city.trim()) {
-      setError('We could not detect your city. Please type it in.'); return false;
+      setError('Please search for and choose your city.'); return false;
     }
     return true;
   }
@@ -183,8 +184,7 @@ export default function RiderSignup() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">City *</label>
-                  <input type="text" value={form.city} onChange={e => set('city', e.target.value)}
-                    placeholder="Auto-filled" className={inputCls} />
+                  <CityPicker value={form.city} onChange={v => set('city', v)} className={inputCls} />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">State</label>

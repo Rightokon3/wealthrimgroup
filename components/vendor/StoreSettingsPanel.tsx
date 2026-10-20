@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Store, CATEGORY_META } from '@/types';
+import CityPicker from '@/components/CityPicker';
 
 interface Props {
   store: Store;
@@ -54,6 +55,7 @@ export default function StoreSettingsPanel({ store, vendorId, onUpdated, onDelet
   }
 
   async function handleSave() {
+    if (!form.city.trim()) { setError('Please search for and choose your city.'); return; }
     setSaving(true); setError(''); setSaved(false);
     const { data, error: err } = await supabase
       .from('stores')
@@ -171,7 +173,7 @@ export default function StoreSettingsPanel({ store, vendorId, onUpdated, onDelet
           </div>
           <div>
             <label className="text-xs font-bold text-gray-700 uppercase tracking-wide">City</label>
-            <input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} className={ic} />
+            <CityPicker value={form.city} onChange={v => setForm(f => ({ ...f, city: v }))} className={ic} />
           </div>
           <div>
             <label className="text-xs font-bold text-gray-700 uppercase tracking-wide">Phone</label>

@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Store, Utensils, Shirt, Building2, MapPin, Phone, ChevronRight, CheckCircle, Upload, X, AlertCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import CityPicker from '@/components/CityPicker';
 import { useAuth } from '@/contexts/AuthContext';
 import { StoreCategory } from '@/types';
 import { Suspense } from 'react';
@@ -333,7 +334,8 @@ function VendorSetupInner() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">City *</label>
-                    <input {...register('city', { required: 'Required' })} type="text" className={ic} placeholder="Lagos" />
+                    <input type="hidden" {...register('city', { required: 'Please search for and choose your city' })} />
+                    <CityPicker value={watch('city') ?? ''} onChange={v => setValue('city', v, { shouldValidate: true })} className={ic} />
                     {errors.city && <p className="text-red-500 text-xs mt-1">{errors.city.message}</p>}
                   </div>
                   <div>

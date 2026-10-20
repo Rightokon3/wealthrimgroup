@@ -43,7 +43,11 @@ export async function POST(req: NextRequest) {
     if (!phoneOk(v)) return NextResponse.json({ error: 'Enter a valid phone number.' }, { status: 400 });
     update.phone = v;
   }
-  if ('city' in b) update.city = clean(b.city, 60) || null;
+  if ('city' in b) {
+    const c = clean(b.city, 60);
+    if (c.length < 2) return NextResponse.json({ error: 'Please search for and choose your city.' }, { status: 400 });
+    update.city = c;
+  }
   if ('vehicle_type' in b) {
     if (!VEHICLES.includes(b.vehicle_type)) return NextResponse.json({ error: 'Choose a vehicle.' }, { status: 400 });
     update.vehicle_type = b.vehicle_type;

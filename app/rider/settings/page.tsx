@@ -8,6 +8,7 @@ import {
   Wallet, ChevronRight, Loader2, CheckCircle, AlertCircle, ShieldCheck,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import CityPicker from '@/components/CityPicker';
 
 type Msg = { ok: boolean; text: string } | null;
 interface R {
@@ -141,7 +142,10 @@ export default function RiderSettings() {
           <div className="space-y-3">
             <div><label className={lbl}>Full name</label><input value={r.full_name} onChange={e => set('full_name', e.target.value)} className={ic} /></div>
             <div><label className={lbl}>Phone</label><input type="tel" value={r.phone} onChange={e => set('phone', e.target.value)} className={ic} /></div>
-            <div><label className={lbl}>City</label><input value={r.city} onChange={e => set('city', e.target.value)} className={ic} /></div>
+            <div>
+              <label className={lbl}>City</label>
+              <CityPicker value={r.city} onChange={v => set('city', v)} className={ic} />
+            </div>
           </div>
           <Save busy={busy === 'profile'} onClick={() => save('profile', { full_name: r.full_name, phone: r.phone, city: r.city })} />
           <Note m={msg.profile ?? null} />
