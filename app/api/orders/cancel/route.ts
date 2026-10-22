@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendPushToUser } from '@/lib/web-push-server';
 import { notifyAdmins } from '@/lib/notify-admins';
@@ -22,6 +23,8 @@ export async function POST(req: NextRequest) {
     const { data: au } = await supabaseAdmin.auth.getUser(token);
     const caller = au?.user;
     if (!caller) return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
+    const w = await rateLimit(`cancel:${caller.id}`, 10, 60, { failClosed: true });   // a cancel can trigger a refund
+    if (w) return tooMany(w);
 
     const { orderId, reason } = await req.json();
     if (!orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendPushToUser } from '@/lib/web-push-server';
 import { notifyAdmins } from '@/lib/notify-admins';
@@ -16,6 +17,8 @@ export async function POST(req: NextRequest) {
     const { data: au } = token ? await supabaseAdmin.auth.getUser(token) : { data: null as any };
     const user = au?.user;
     if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
+    const w = await rateLimit(`rider-released:${user.id}`, 20, 60);
+    if (w) return tooMany(w);
 
     const { orderId } = await req.json();
     if (!orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 });

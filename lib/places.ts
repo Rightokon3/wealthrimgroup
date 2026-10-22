@@ -2,6 +2,8 @@
 //   PLACES_PROVIDER=osm      (default, free, OpenStreetMap Nominatim)
 //   PLACES_PROVIDER=google   (needs GOOGLE_MAPS_API_KEY with "Places API (New)" enabled)
 // The rest of the app only ever calls searchCities().
+import { rateLimit } from '@/lib/rateLimit';
+
 export type PlaceHit = {
   city: string;            // what gets saved in the "city" field (e.g. Uyo, Mushin)
   state: string | null;    // e.g. Akwa Ibom
@@ -104,7 +106,10 @@ export async function searchCities(rawQuery: string): Promise<PlaceHit[]> {
 
   const provider = (process.env.PLACES_PROVIDER || 'osm').toLowerCase();
   let hits: PlaceHit[];
-  if (provider === 'google') {
+  // Google is paid: stop after the daily cap (or if the counter is unreadable) and use free OpenStreetMap.
+  const googleOk = provider === 'google' && !!process.env.GOOGLE_MAPS_API_KEY &&
+    (await rateLimit('places:google:day', Number(process.env.PLACES_GOOGLE_DAILY_CAP || 2000), 86400, { failClosed: true })) === 0;
+  if (googleOk) {
     hits = await searchGoogle(q);
   } else {
     const wait = lastOsmCall + 1100 - Date.now();

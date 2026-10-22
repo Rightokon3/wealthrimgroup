@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { requireVerifiedUser } from '@/lib/requireVerifiedUser';
 import { verifyTransaction } from '@/lib/paystackPayouts';
@@ -9,6 +10,9 @@ export async function POST(req: NextRequest) {
   const auth = await requireVerifiedUser(req);
   if ('error' in auth) return auth.error;
   const user = auth.user;
+
+  const w = await rateLimit(`remit-verify:${user.id}`, 30, 60);
+  if (w) return tooMany(w);
 
   const { reference } = await req.json().catch(() => ({}));
   if (typeof reference !== 'string' || !/^REMIT-[0-9a-f-]{36}$/i.test(reference)) {

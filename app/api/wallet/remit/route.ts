@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { requireVerifiedUser } from '@/lib/requireVerifiedUser';
 import { getBaseUrl } from '@/lib/getBaseUrl';
 import { initializePayment } from '@/lib/paystackPayouts';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 
 // Rider pays back the cash they collected (cash-on-delivery) through Paystack (bank transfer or card).
 // POST { amount? }  — defaults to everything owed. The webhook credits the wallet when the money arrives.
@@ -11,6 +12,9 @@ export async function POST(req: NextRequest) {
   const auth = await requireVerifiedUser(req);
   if ('error' in auth) return auth.error;
   const user = auth.user;
+
+  const w = await rateLimit(`remit:${user.id}`, 5, 60, { failClosed: true });
+  if (w) return tooMany(w, 'Please wait a moment before trying again.');
 
   const { data: rider } = await supabaseAdmin.from('riders').select('id').eq('user_id', user.id).maybeSingle();
   if (!rider) return NextResponse.json({ error: 'Only riders can do this.' }, { status: 403 });

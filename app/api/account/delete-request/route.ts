@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { requireVerifiedUser } from '@/lib/requireVerifiedUser';
 import { notifyAdmins } from '@/lib/notify-admins';
@@ -10,6 +11,8 @@ export async function POST(req: NextRequest) {
   const auth = await requireVerifiedUser(req);
   if ('error' in auth) return auth.error;
   const user = auth.user;
+  const w = await rateLimit(`delete-req:${user.id}`, 5, 3600);
+  if (w) return tooMany(w, 'Too many requests. Try again later.');
   const { action, confirm } = await req.json().catch(() => ({}));
 
   if (action === 'cancel') {

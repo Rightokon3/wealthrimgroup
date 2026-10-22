@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { requireVerifiedUser } from '@/lib/requireVerifiedUser';
 import { notifyAdmins } from '@/lib/notify-admins';
@@ -7,6 +8,8 @@ import { notifyAdmins } from '@/lib/notify-admins';
 export async function POST(req: NextRequest) {
   const auth = await requireVerifiedUser(req);
   if ('error' in auth) return auth.error;
+  const w = await rateLimit(`delivery-problem:${auth.user.id}`, 10, 60);
+  if (w) return tooMany(w);
 
   const { orderId, reason } = await req.json();
   if (!orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 });

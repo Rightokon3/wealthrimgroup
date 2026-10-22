@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/requireAdmin';
 import { getWalletRole } from '@/lib/walletRole';
 import { sendTransfer, getPaystackBalance, verifyTransfer } from '@/lib/paystackPayouts';
 import { markPaid, markFailed, applyTransferState } from '@/lib/payoutSettle';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 
 // POST { user_id, amount, key }  — the Drovo admin pays a vendor or rider from the Paystack balance.
 //
@@ -26,6 +27,12 @@ export async function POST(req: NextRequest) {
   const amt = Math.floor(Number(body.amount));
   if (!UUID.test(userId) || !UUID.test(key)) return NextResponse.json({ error: 'Bad request.' }, { status: 400 });
   if (!Number.isFinite(amt) || amt <= 0) return NextResponse.json({ error: 'Enter a valid amount.' }, { status: 400 });
+
+  // Money route: if the limiter cannot be checked, refuse (failClosed).
+  const w1 = await rateLimit(`pay-admin:${admin.id}`, 20, 60, { failClosed: true });
+  if (w1) return tooMany(w1, 'Too many payments in a short time. Wait a moment.');
+  const w2 = await rateLimit(`pay-user:${userId}`, 8, 60, { failClosed: true });   // retries of ONE payment fit easily
+  if (w2) return tooMany(w2, 'Too many attempts to pay this person. Wait a moment.');
 
   const role = await getWalletRole(userId);
   if (!role) return NextResponse.json({ error: 'That user is not a vendor or rider.' }, { status: 400 });
@@ -51,6 +58,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'That attempt failed. Close this window and start again.', startNew: true }, { status: 409 });
     }
   } else {
+    // Never start a SECOND payment to the same person while one is still being processed
+    // (two admins, a double click, a replayed request).
+    const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const { data: inFlight } = await supabaseAdmin.from('wallet_transactions')
+      .select('id').eq('user_id', userId).eq('type', 'withdrawal').eq('status', 'processing')
+      .gte('created_at', since).limit(1);
+    if (inFlight && inFlight.length > 0) {
+      return NextResponse.json({ error: 'A payment to this person is still being processed. Wait for it to finish, then check Recent activity.' }, { status: 409 });
+    }
+
     // Is there enough money in Paystack?
     const ps = await getPaystackBalance();
     if (ps === null) return NextResponse.json({ error: 'Could not reach Paystack (network). Nothing was sent. Try again.' }, { status: 502 });

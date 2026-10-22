@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { settleCustomerPayment } from '@/lib/customerPayment';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 
 /**
  * Responses:
@@ -13,6 +14,13 @@ export async function POST(req: Request) {
   try { reference = String((await req.json())?.reference || '').trim(); } catch {}
   if (!reference || reference.length > 100) {
     return NextResponse.json({ verified: false, retry: false, error: 'Missing reference' }, { status: 400 });
+  }
+
+  // The checkout retries up to 8 times, so these limits leave plenty of room for a real customer.
+  const w1 = await rateLimit(`verify-ref:${reference}`, 25, 300);
+  const w2 = await rateLimit(`verify-ip:${clientIp(req)}`, 80, 60);
+  if (w1 || w2) {
+    return NextResponse.json({ verified: false, retry: true, error: 'Please wait a moment. Checking again…' }, { status: 429 });
   }
 
   let res: Response;

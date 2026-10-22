@@ -7,6 +7,7 @@ import { getPrefs } from '@/lib/notificationPrefs';
 import { notifyAdmins } from '@/lib/notify-admins';
 import { isNearby } from '@/lib/riderMatch';
 import { getBaseUrl } from '@/lib/getBaseUrl';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 
 // Where a rider lands when they tap a new-order notification. Change if yours differs.
 const RIDER_DASHBOARD_URL = '/rider/dashboard';
@@ -33,7 +34,12 @@ const STATUS_MESSAGES: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
+    const wIp = await rateLimit(`notify-ip:${clientIp(req)}`, 60, 60);
+    if (wIp) return tooMany(wIp);
     const body: Body = await req.json();
+    // One order can only trigger a few emails of each kind - stops anyone spamming a customer or vendor.
+    const wKey = await rateLimit(`notify:${body.orderId ?? body.vendorId ?? 'x'}:${body.type ?? ''}:${body.status ?? ''}`, 4, 600);
+    if (wKey) return tooMany(wKey);
     const type = body.type ?? (body.orderId && body.status ? 'order_status' : body.orderId ? 'new_order' : null);
 
     if (type === 'welcome') {

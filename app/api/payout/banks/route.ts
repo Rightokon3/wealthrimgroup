@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 import { requireVerifiedUser } from '@/lib/requireVerifiedUser';
 import { listBanks } from '@/lib/paystackPayouts';
 
@@ -7,6 +8,8 @@ let cache: { at: number; banks: { name: string; code: string }[] } | null = null
 export async function GET(req: NextRequest) {
   const auth = await requireVerifiedUser(req);
   if ('error' in auth) return auth.error;
+  const w = await rateLimit(`banks:${auth.user.id}`, 20, 60);
+  if (w) return tooMany(w);
   try {
     if (!cache || Date.now() - cache.at > 6 * 3600_000) cache = { at: Date.now(), banks: await listBanks() };
     return NextResponse.json({ banks: cache.banks });

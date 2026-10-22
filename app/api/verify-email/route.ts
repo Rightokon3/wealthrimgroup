@@ -4,12 +4,16 @@ import { mailer } from '@/lib/mailer';
 import { sendPushToUser } from '@/lib/web-push-server';
 import { notifyAdmins } from '@/lib/notify-admins';
 import { getBaseUrl } from '@/lib/getBaseUrl';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token');
   // Works in development AND deployment: no hard-coded localhost address
   const baseUrl = getBaseUrl(req);
 
+  if (await rateLimit(`verify-email:${clientIp(req)}`, 30, 60)) {
+    return NextResponse.redirect(`${baseUrl}/auth/verify-result?status=invalid`);
+  }
   if (!token) {
     return NextResponse.redirect(`${baseUrl}/auth/verify-result?status=invalid`);
   }

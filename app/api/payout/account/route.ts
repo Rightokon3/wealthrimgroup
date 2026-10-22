@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { rateLimit, clientIp, tooMany } from '@/lib/rateLimit';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { requireVerifiedUser } from '@/lib/requireVerifiedUser';
 import { getWalletRole } from '@/lib/walletRole';
@@ -13,6 +14,9 @@ export async function POST(req: NextRequest) {
   const auth = await requireVerifiedUser(req);
   if ('error' in auth) return auth.error;
   const user = auth.user;
+
+  const w = await rateLimit(`payout-account:${user.id}`, 10, 600);
+  if (w) return tooMany(w, 'Too many attempts. Please wait a few minutes.');
 
   const role = await getWalletRole(user.id);
   if (!role) return NextResponse.json({ error: 'Only vendors and riders can add a payout account.' }, { status: 403 });
