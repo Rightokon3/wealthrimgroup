@@ -73,7 +73,7 @@ async function searchGoogle(q: string): Promise<PlaceHit[]> {
     body: JSON.stringify({ input: q, includedRegionCodes: ['ng'] }),
     signal: AbortSignal.timeout(8000),
   });
-  if (!res.ok) throw new Error(`Google ${res.status}`);
+  if (!res.ok) throw new Error(`Google ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const j = await res.json();
   return (j.suggestions ?? []).map((s: any): PlaceHit | null => {
     const p = s.placePrediction;
@@ -109,8 +109,13 @@ export async function searchCities(rawQuery: string): Promise<PlaceHit[]> {
   // Google is paid: stop after the daily cap (or if the counter is unreadable) and use free OpenStreetMap.
   const googleOk = provider === 'google' && !!process.env.GOOGLE_MAPS_API_KEY &&
     (await rateLimit('places:google:day', Number(process.env.PLACES_GOOGLE_DAILY_CAP || 2000), 86400, { failClosed: true })) === 0;
+  let fromGoogle: PlaceHit[] | null = null;
   if (googleOk) {
-    hits = await searchGoogle(q);
+    try { fromGoogle = await searchGoogle(q); }
+    catch (e: any) { console.error('[places] Google failed, falling back to OpenStreetMap:', e?.message ?? e); }
+  }
+  if (fromGoogle) {
+    hits = fromGoogle;
   } else {
     const wait = lastOsmCall + 1100 - Date.now();
     if (wait > 0) await new Promise(r => setTimeout(r, wait));

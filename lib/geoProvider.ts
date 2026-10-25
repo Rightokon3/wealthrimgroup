@@ -37,18 +37,37 @@ export async function geoSearch(query: string): Promise<PlaceResult[]> {
   const hit = searchCache.get(q);
   if (hit && Date.now() - hit.at < DAY) return hit.v;
 
-  let out: PlaceResult[];
+  let out: PlaceResult[] | null = null;
   if (await useGoogle()) {
-    const url = 'https://maps.googleapis.com/maps/api/geocode/json?' + new URLSearchParams({
-      address: q, components: 'country:NG', key: process.env.GOOGLE_MAPS_API_KEY!,
-    });
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) throw new Error('Search failed');
-    const j = await res.json();
-    out = (j.results ?? []).slice(0, 5).map((r: any) => ({
-      lat: r.geometry.location.lat, lng: r.geometry.location.lng, label: r.formatted_address as string,
-    }));
-  } else {
+    try {
+      // Places Text Search knows streets, schools, junctions and landmarks that the plain Geocoding API misses.
+      const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': process.env.GOOGLE_MAPS_API_KEY!,
+          'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location',
+        },
+        body: JSON.stringify({ textQuery: q, regionCode: 'NG', maxResultCount: 5 }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      const j = await res.json();
+      out = (j.places ?? [])
+        .filter((p: any) => p.location)
+        .map((p: any) => {
+          const name: string = p.displayName?.text ?? '';
+          const addr: string = (p.formattedAddress ?? '').replace(/, Nigeria$/, '');
+          return {
+            lat: p.location.latitude, lng: p.location.longitude,
+            label: name && !addr.toLowerCase().startsWith(name.toLowerCase()) ? `${name}, ${addr}` : addr || name,
+          };
+        });
+    } catch (e: any) {
+      console.error('[geo] Google search failed, falling back to OpenStreetMap:', e?.message ?? e);
+    }
+  }
+  if (!out) {
     await osmGate();
     const res = await fetch(`${NOMINATIM}/search?format=jsonv2&limit=5&countrycodes=ng&q=${encodeURIComponent(q)}`, {
       headers: { 'User-Agent': UA, 'Accept-Language': 'en' }, signal: AbortSignal.timeout(8000),
@@ -69,12 +88,15 @@ export async function geoReverse(lat: number, lng: number): Promise<ReverseResul
   let out: ReverseResult | null = null;
   try {
     if (await useGoogle()) {
-      const url = 'https://maps.googleapis.com/maps/api/geocode/json?' + new URLSearchParams({
-        latlng: `${lat},${lng}`, key: process.env.GOOGLE_MAPS_API_KEY!,
-      });
-      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-      if (res.ok) {
-        const r = (await res.json()).results?.[0];
+      try {
+        const url = 'https://maps.googleapis.com/maps/api/geocode/json?' + new URLSearchParams({
+          latlng: `${lat},${lng}`, key: process.env.GOOGLE_MAPS_API_KEY!,
+        });
+        const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const j = await res.json();
+        if (j.status !== 'OK' && j.status !== 'ZERO_RESULTS') throw new Error(`${j.status}: ${j.error_message ?? ''}`);
+        const r = j.results?.[0];
         if (r) {
           const get = (...t: string[]) => r.address_components?.find((c: any) => t.some(x => c.types.includes(x)))?.long_name ?? '';
           const street = [get('street_number'), get('route')].filter(Boolean).join(' ');
@@ -85,8 +107,11 @@ export async function geoReverse(lat: number, lng: number): Promise<ReverseResul
             state: get('administrative_area_level_1'),
           };
         }
+      } catch (e: any) {
+        console.error('[geo] Google reverse failed, falling back to OpenStreetMap:', e?.message ?? e);
       }
-    } else {
+    }
+    if (!out) {
       await osmGate();
       const res = await fetch(`${NOMINATIM}/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${lat}&lon=${lng}`, {
         headers: { 'User-Agent': UA, 'Accept-Language': 'en' }, signal: AbortSignal.timeout(8000),

@@ -11,7 +11,8 @@ export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get('q') ?? '';
   try {
     return NextResponse.json({ results: await searchCities(q) });
-  } catch {
+  } catch (e: any) {
+    console.error('[places] search failed:', e?.message ?? e);
     // Map provider down / slow: the picker lets the person type their city instead.
     return NextResponse.json({ results: [], unavailable: true });
   }
