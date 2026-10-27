@@ -73,6 +73,18 @@ function CheckoutInner() {
   const [orderId,        setOrderId]        = useState<string | null>(null);
   const [orderNum,       setOrderNum]       = useState('');
   const [storeName,      setStoreName]      = useState('');
+  const [placedOrder,    setPlacedOrder]    = useState<{
+    id: string;
+    orderNum: string;
+    subtotal: number;
+    platformFee: number;
+    deliveryFee: number;
+    total: number;
+    storeName: string;
+    isRealEstate: boolean;
+    tier?: string;
+    paymentMethod: PaymentMethod;
+  } | null>(null);
   const [error,          setError]          = useState('');
   const [customerCoords, setCustomerCoords] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -258,7 +270,7 @@ function CheckoutInner() {
   }, [city, store, customerCoords]);
 
   const isRealEstate = store?.category === 'real_estate';
-  const deliveryFee  = isRealEstate ? 0 : (feeResult?.fee ?? 100);
+  const deliveryFee  = isRealEstate ? 0 : (feeResult?.fee ?? 0);
   const platformFee  = Math.round(subtotal * 0.12);
   const total        = subtotal + deliveryFee;
 
@@ -381,20 +393,22 @@ function CheckoutInner() {
   // With a payment reference this is safe to call again after a bad network:
   // the same reference always gives back the same order (never a duplicate).
   async function createOrder(paystackRef?: string) {
-    if (!user || !store) throw new Error('Not ready to place order.');
+    if (!user) throw new Error('Not logged in.');
 
-    let existing: { id: string; order_number: string } | null = null;
+    let existing: any = null;
     if (paystackRef) {
       const { data: ex } = await supabase.from('orders')
-        .select('id, order_number').eq('payment_reference', paystackRef).maybeSingle();
+        .select('id, order_number, subtotal, delivery_fee, total, delivery_type, payment_method, stores:store_id(name)').eq('payment_reference', paystackRef).maybeSingle();
       existing = ex ?? null;
     }
+
+    if (!existing && !store) throw new Error('Not ready to place order.');
 
     const { data: order, error: oErr } = existing ? { data: existing, error: null } : await supabase
       .from('orders')
       .insert([{
         customer_id:      user.id,
-        store_id:         store.id,
+        store_id:         store!.id,
         delivery_type:    isRealEstate ? 'viewing' : 'delivery',
         delivery_address: address,
         delivery_city:    city,
@@ -412,7 +426,7 @@ function CheckoutInner() {
         payment_reference: paystackRef ?? null,
         assigned_rider_id: isRealEstate ? null : (riderRef.current?.id ?? null),
       }])
-      .select('id, order_number')
+      .select('id, order_number, subtotal, delivery_fee, total, delivery_type')
       .single();
 
     if (oErr) throw new Error(oErr.message);
@@ -458,7 +472,25 @@ function CheckoutInner() {
     orderPlaced.current = true;
     clearDraft();
 
-    return order as { id: string; order_number: string };
+    const orderSubtotal = Number((order as any).subtotal ?? subtotal);
+    const orderDeliveryFee = Number((order as any).delivery_fee ?? deliveryFee);
+    const orderTotal = Number((order as any).total ?? total);
+    const orderIsRealEstate = ((order as any).delivery_type ?? (isRealEstate ? 'viewing' : 'delivery')) === 'viewing';
+    const orderStoreName = existing?.stores?.name ?? store?.name ?? storeName;
+    const orderPaymentMethod = ((order as any).payment_method ?? payment) as PaymentMethod;
+
+    return {
+      id: order.id as string,
+      order_number: order.order_number as string,
+      subtotal: orderSubtotal,
+      delivery_fee: orderDeliveryFee,
+      platform_fee: Math.round(orderSubtotal * 0.12),
+      total: orderTotal,
+      store_name: orderStoreName,
+      is_real_estate: orderIsRealEstate,
+      tier: feeResult?.tier,
+      payment_method: orderPaymentMethod,
+    };
   }
 
   // ── Cash on delivery ────────────────────────────────────────────
@@ -467,8 +499,20 @@ function CheckoutInner() {
     setPlacing(true); setError('');
     try {
       const order = await createOrder();
+      setPlacedOrder({
+        id: order.id,
+        orderNum: order.order_number,
+        subtotal: order.subtotal,
+        platformFee: order.platform_fee,
+        deliveryFee: order.delivery_fee,
+        total: order.total,
+        storeName: order.store_name,
+        isRealEstate: order.is_real_estate,
+        tier: order.tier,
+        paymentMethod: order.payment_method,
+      });
       clearCart();
-      setStoreName(store?.name ?? '');
+      setStoreName(order.store_name);
       setOrderId(order.id);
       setOrderNum(order.order_number);
     } catch (e: any) {
@@ -488,8 +532,20 @@ function CheckoutInner() {
     setPlacing(true); setError('');
     try {
       const order = await createOrder();
+      setPlacedOrder({
+        id: order.id,
+        orderNum: order.order_number,
+        subtotal: order.subtotal,
+        platformFee: order.platform_fee,
+        deliveryFee: order.delivery_fee,
+        total: order.total,
+        storeName: order.store_name,
+        isRealEstate: order.is_real_estate,
+        tier: order.tier,
+        paymentMethod: order.payment_method,
+      });
       clearCart();
-      setStoreName(store?.name ?? '');
+      setStoreName(order.store_name);
       setOrderPaymentStatus('pending');
       setOrderId(order.id);
       setOrderNum(order.order_number);
@@ -545,8 +601,20 @@ function CheckoutInner() {
     setPayRef(reference);
     rememberRef(reference);
     const order = await createOrderWithRetry(reference);
+    setPlacedOrder({
+      id: order.id,
+      orderNum: order.order_number,
+      subtotal: order.subtotal,
+      platformFee: order.platform_fee,
+      deliveryFee: order.delivery_fee,
+      total: order.total,
+      storeName: order.store_name,
+      isRealEstate: order.is_real_estate,
+      tier: order.tier,
+      paymentMethod: order.payment_method,
+    });
     clearCart();
-    setStoreName(store?.name ?? '');
+    setStoreName(order.store_name);
     setOrderPaymentStatus('pending');
     setOrderId(order.id);
     setOrderNum(order.order_number);
@@ -609,7 +677,7 @@ function CheckoutInner() {
     const reference = ref;
     (async () => {
       const { data: ex } = await supabase.from('orders')
-        .select('id, order_number').eq('payment_reference', reference).maybeSingle();
+        .select('id, order_number, subtotal, delivery_fee, total, delivery_type, payment_method, stores:store_id(name)').eq('payment_reference', reference).maybeSingle();
       if (!ex && (items.length === 0 || !address.trim() || !city.trim() || !phone.trim())) return; // wait for the cart/draft
       recoveryTried.current = true;
       setPayment('card');
@@ -685,67 +753,79 @@ function CheckoutInner() {
   );
 
   // ── Success screen ────────────────────────────────────────────
-  if (orderId) return (
-    <div className="min-h-screen pt-[64px] flex items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
-      <motion.div initial={{ scale: .85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center max-w-md w-full">
-        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: .2, type: 'spring', stiffness: 200 }}
-          className="w-24 h-24 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-green-200">
-          <CheckCircle className="w-12 h-12 text-white" />
-        </motion.div>
-        <h2 className="text-3xl font-black text-gray-900 mb-2 flex items-center justify-center gap-2">
-          {isRealEstate ? 'Viewing Booked!' : 'Order Placed!'}
-          {isRealEstate
-            ? <Home className="w-7 h-7 text-orange-500" />
-            : <PartyPopper className="w-7 h-7 text-orange-500" />}
-        </h2>
-        <p className="text-gray-500 mb-5">
-          {isRealEstate ? 'Your viewing request has been sent to' : 'Your order has been sent to'}{' '}
-          <span className="font-bold text-gray-700">{storeName}</span>.
-        </p>
+  if (orderId) {
+    const summary = placedOrder;
+    const isViewing = summary ? summary.isRealEstate : isRealEstate;
+    const summaryStoreName = summary?.storeName || storeName;
+    const summarySubtotal = summary ? summary.subtotal : subtotal;
+    const summaryPlatformFee = summary ? summary.platformFee : platformFee;
+    const summaryDeliveryFee = summary ? summary.deliveryFee : deliveryFee;
+    const summaryTotal = summary ? summary.total : total;
+    const summaryTier = summary?.tier || feeResult?.tier;
+    const summaryPayment = summary?.paymentMethod || payment;
 
-        {(payment === 'transfer' || payment === 'card') && (
-          <div className={`flex items-center justify-center gap-2 mb-5 px-4 py-2.5 rounded-xl border text-sm font-bold ${
-            orderPaymentStatus === 'paid'
-              ? 'bg-green-50 border-green-200 text-green-700'
-              : 'bg-orange-50 border-orange-200 text-orange-600'
-          }`}>
-            {orderPaymentStatus === 'paid'
-              ? <><CheckCircle className="w-4 h-4" /> Payment confirmed</>
-              : <><Loader2 className="w-4 h-4 animate-spin" /> {payment === 'card' ? 'Confirming your payment — please do not pay again' : 'Waiting for your transfer to land — this updates automatically'}</>
-            }
-          </div>
-        )}
-        {payment === 'card' && orderPaymentStatus === 'pending' && payRef && (
-          <p className="text-xs text-gray-400 mb-4 -mt-2">
-            Payment reference: <span className="font-mono font-bold text-gray-600">{payRef}</span>. This page updates by itself. If you were charged, your order is safe.
+    return (
+      <div className="min-h-screen pt-[64px] flex items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
+        <motion.div initial={{ scale: .85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center max-w-md w-full">
+          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: .2, type: 'spring', stiffness: 200 }}
+            className="w-24 h-24 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-green-200">
+            <CheckCircle className="w-12 h-12 text-white" />
+          </motion.div>
+          <h2 className="text-3xl font-black text-gray-900 mb-2 flex items-center justify-center gap-2">
+            {isViewing ? 'Viewing Booked!' : 'Order Placed!'}
+            {isViewing
+              ? <Home className="w-7 h-7 text-orange-500" />
+              : <PartyPopper className="w-7 h-7 text-orange-500" />}
+          </h2>
+          <p className="text-gray-500 mb-5">
+            {isViewing ? 'Your viewing request has been sent to' : 'Your order has been sent to'}{' '}
+            <span className="font-bold text-gray-700">{summaryStoreName}</span>.
           </p>
-        )}
-        {error && (
-          <p className="text-sm text-red-600 font-medium mb-4">{error}</p>
-        )}
 
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm mb-6 text-left space-y-2">
-          <div className="flex justify-between text-sm"><span className="text-gray-500">Order #</span><span className="font-mono font-black text-xs">{orderNum}</span></div>
-          <div className="flex justify-between text-sm"><span className="text-gray-500">Subtotal</span><span className="font-bold">₦{subtotal.toLocaleString()}</span></div>
-          <div className="flex justify-between text-sm"><span className="text-gray-500">Platform fee (12%)</span><span className="font-bold text-orange-600">₦{platformFee.toLocaleString()}</span></div>
-          {!isRealEstate && (
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Delivery {feeResult && <span className="text-xs text-gray-400">({feeResult.tier})</span>}</span>
-              <span className="font-bold">₦{deliveryFee.toLocaleString()}</span>
+          {(summaryPayment === 'transfer' || summaryPayment === 'card') && (
+            <div className={`flex items-center justify-center gap-2 mb-5 px-4 py-2.5 rounded-xl border text-sm font-bold ${
+              orderPaymentStatus === 'paid'
+                ? 'bg-green-50 border-green-200 text-green-700'
+                : 'bg-orange-50 border-orange-200 text-orange-600'
+            }`}>
+              {orderPaymentStatus === 'paid'
+                ? <><CheckCircle className="w-4 h-4" /> Payment confirmed</>
+                : <><Loader2 className="w-4 h-4 animate-spin" /> {summaryPayment === 'card' ? 'Confirming your payment — please do not pay again' : 'Waiting for your transfer to land — this updates automatically'}</>
+              }
             </div>
           )}
-          <div className="flex justify-between font-black text-gray-900 text-base pt-2 border-t border-gray-100">
-            <span>Total</span><span>₦{total.toLocaleString()}</span>
+          {summaryPayment === 'card' && orderPaymentStatus === 'pending' && payRef && (
+            <p className="text-xs text-gray-400 mb-4 -mt-2">
+              Payment reference: <span className="font-mono font-bold text-gray-600">{payRef}</span>. This page updates by itself. If you were charged, your order is safe.
+            </p>
+          )}
+          {error && (
+            <p className="text-sm text-red-600 font-medium mb-4">{error}</p>
+          )}
+
+          <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm mb-6 text-left space-y-2">
+            <div className="flex justify-between text-sm"><span className="text-gray-500">Order #</span><span className="font-mono font-black text-xs">{orderNum}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-500">Subtotal</span><span className="font-bold">₦{summarySubtotal.toLocaleString()}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-500">Platform fee (12%)</span><span className="font-bold text-orange-600">₦{summaryPlatformFee.toLocaleString()}</span></div>
+            {!isViewing && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Delivery {summaryTier && <span className="text-xs text-gray-400">({summaryTier})</span>}</span>
+                <span className="font-bold">₦{summaryDeliveryFee.toLocaleString()}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-black text-gray-900 text-base pt-2 border-t border-gray-100">
+              <span>Total</span><span>₦{summaryTotal.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-sm"><span className="text-gray-500">Payment</span><span className="font-semibold capitalize">{summaryPayment.replace(/_/g, ' ')}</span></div>
           </div>
-          <div className="flex justify-between text-sm"><span className="text-gray-500">Payment</span><span className="font-semibold capitalize">{payment.replace(/_/g, ' ')}</span></div>
-        </div>
-        <div className="flex gap-3">
-          <Link href="/orders" className="flex-1 py-3 rounded-2xl border-2 border-orange-200 text-orange-600 font-bold text-sm hover:bg-orange-50">Track Order</Link>
-          <Link href="/"       className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold text-sm hover:from-orange-600 hover:to-red-700">Back to Home</Link>
-        </div>
-      </motion.div>
-    </div>
-  );
+          <div className="flex gap-3">
+            <Link href="/orders" className="flex-1 py-3 rounded-2xl border-2 border-orange-200 text-orange-600 font-bold text-sm hover:bg-orange-50">Track Order</Link>
+            <Link href="/"       className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold text-sm hover:from-orange-600 hover:to-red-700">Back to Home</Link>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   // ── Empty cart ────────────────────────────────────────────────
   if (totalItems === 0) return (
