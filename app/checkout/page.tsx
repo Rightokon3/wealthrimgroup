@@ -806,7 +806,6 @@ function CheckoutInner() {
           <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm mb-6 text-left space-y-2">
             <div className="flex justify-between text-sm"><span className="text-gray-500">Order #</span><span className="font-mono font-black text-xs">{orderNum}</span></div>
             <div className="flex justify-between text-sm"><span className="text-gray-500">Subtotal</span><span className="font-bold">₦{summarySubtotal.toLocaleString()}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-500">Platform fee (12%)</span><span className="font-bold text-orange-600">₦{summaryPlatformFee.toLocaleString()}</span></div>
             {!isViewing && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">Delivery {summaryTier && <span className="text-xs text-gray-400">({summaryTier})</span>}</span>

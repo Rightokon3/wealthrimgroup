@@ -516,7 +516,7 @@ export default function VendorDashboard() {
                   </div>
                 </div>
                 <div className="mt-4 p-3 rounded-xl bg-orange-50 border border-orange-100 text-xs text-orange-700">
-                  💡 Payouts are processed weekly. Minimum payout threshold is ₦5,000. Payments go directly to your registered bank account.
+                  💡 Payouts are processed on the day delivery is made. Payments go directly to your registered bank account.
                 </div>
               </div>
 
