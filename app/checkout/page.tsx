@@ -1276,7 +1276,7 @@ function CheckoutInner() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-gray-500"><span>Items subtotal</span><span>₦{subtotal.toLocaleString()}</span></div>
                 <div className="flex justify-between text-orange-600 font-semibold">
-                  <span>Drovo fee (12%)</span><span>₦{platformFee.toLocaleString()}</span>
+                 
                 </div>
                 {!isRealEstate && (
                   <div className="flex justify-between text-gray-500">
