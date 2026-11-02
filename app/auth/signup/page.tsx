@@ -22,6 +22,7 @@ function SignupInner() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   // A ref, not state — updates synchronously, so it's already true by the
   // time onAuthStateChange fires isLoggedIn=true, closing the race where
@@ -37,6 +38,7 @@ function SignupInner() {
     e.preventDefault(); setError('');
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
     if (password !== confirm) { setError('Passwords do not match.'); return; }
+    if (!agreedToTerms) { setError('You must agree to the Terms of Use and Privacy Policy to create an account.'); return; }
     setSubmitting(true);
     justSignedUpRef.current = true; // block the redirect effect before signUp can trigger onAuthStateChange
 
@@ -124,6 +126,30 @@ function SignupInner() {
                 <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Confirm Password</label>
                 <input type={showPass?'text':'password'} required value={confirm} onChange={e=>setConfirm(e.target.value)} className={`${ic} ${confirm&&confirm!==password?'border-red-300':''}`} placeholder="Repeat password"/>
                 {confirm&&confirm!==password&&<p className="text-xs text-red-500 mt-1 font-medium">Passwords don't match</p>}
+              </div>
+              <div className="flex items-start gap-3 pt-1">
+                <input
+                  id="agree-terms"
+                  type="checkbox"
+                  required
+                  checked={agreedToTerms}
+                  onChange={e => {
+                    setAgreedToTerms(e.target.checked);
+                    if (e.target.checked) setError('');
+                  }}
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500 cursor-pointer accent-orange-500 flex-shrink-0"
+                />
+                <label htmlFor="agree-terms" className="text-xs text-gray-600 leading-relaxed cursor-pointer select-none">
+                  I agree to the company&apos;s{' '}
+                  <Link href="/terms" target="_blank" rel="noopener noreferrer" className="font-bold text-orange-600 hover:underline">
+                    Terms of Use
+                  </Link>{' '}
+                  and{' '}
+                  <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="font-bold text-orange-600 hover:underline">
+                    Privacy Policy
+                  </Link>
+                  .
+                </label>
               </div>
               <button type="submit" disabled={submitting} className="w-full py-3.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-black text-sm hover:from-orange-600 hover:to-red-700 transition-all shadow-lg shadow-orange-200 disabled:opacity-60 flex items-center justify-center gap-2">
                 {submitting?<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>Creating...</>:<>Create {role==='vendor'?'Vendor':'Customer'} Account <ArrowRight className="w-4 h-4"/></>}

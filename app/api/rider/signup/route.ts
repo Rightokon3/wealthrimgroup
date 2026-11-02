@@ -15,9 +15,12 @@ export async function POST(req: NextRequest) {
   try {
     const {
       full_name, email, phone, password, city, state,
-      latitude, longitude, vehicle_type, vehicle_plate,
+      latitude, longitude, vehicle_type, vehicle_plate, agreed_to_terms,
     } = await req.json();
 
+    if (!agreed_to_terms) {
+      return NextResponse.json({ error: 'You must agree to the Terms of Use and Privacy Policy.' }, { status: 400 });
+    }
     if (!full_name || !email || !phone || !password || !city || !vehicle_type) {
       return NextResponse.json({ error: 'Please fill in all required fields.' }, { status: 400 });
     }

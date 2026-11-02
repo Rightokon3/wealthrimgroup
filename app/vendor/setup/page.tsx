@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useForm } from 'react-hook-form';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -48,6 +49,7 @@ function VendorSetupInner() {
   const [coverPreview, setCoverPreview] = useState<string|null>(null);
   const [saving,       setSaving]       = useState(false);
   const [error,        setError]        = useState('');
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [done,         setDone]         = useState(false);
   const [coords,       setCoords]       = useState<{ latitude: number; longitude: number } | null>(null);
 
@@ -86,6 +88,10 @@ function VendorSetupInner() {
 
   const onSubmit = async (data: SetupForm) => {
     if (!user) return;
+    if (!agreedToTerms) {
+      setError('You must agree to the Terms of Use and Privacy Policy before launching your store.');
+      return;
+    }
     if (!coords) {
       setError('Please pin your store location on the map before launching.');
       return;
@@ -367,6 +373,30 @@ function VendorSetupInner() {
                   <p className="text-amber-700 text-xs leading-relaxed">
                     Drovo charges a <strong>10% platform fee</strong> on every sale. You receive <strong>90%</strong> of each order value. Payouts are processed within 24–48 hours of order completion to your registered bank account.
                   </p>
+                </div>
+                <div className="flex items-start gap-3 pt-2">
+                  <input
+                    id="vendor-terms"
+                    type="checkbox"
+                    required
+                    checked={agreedToTerms}
+                    onChange={e => {
+                      setAgreedToTerms(e.target.checked);
+                      if (e.target.checked) setError('');
+                    }}
+                    className="mt-1 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500 cursor-pointer accent-orange-500 flex-shrink-0"
+                  />
+                  <label htmlFor="vendor-terms" className="text-xs text-gray-600 leading-relaxed cursor-pointer select-none">
+                    I agree to the company&apos;s{' '}
+                    <Link href="/terms" target="_blank" rel="noopener noreferrer" className="font-bold text-orange-600 hover:underline">
+                      Terms of Use
+                    </Link>{' '}
+                    and{' '}
+                    <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="font-bold text-orange-600 hover:underline">
+                      Privacy Policy
+                    </Link>
+                    .
+                  </label>
                 </div>
 
                 <div className="flex justify-between pt-2">

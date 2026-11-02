@@ -34,6 +34,7 @@ export default function RiderSignup() {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const [form, setForm] = useState({
     full_name: '', email: '', phone: '', password: '', city: '', state: '',
@@ -79,6 +80,10 @@ export default function RiderSignup() {
   }
 
   async function handleSubmit() {
+    if (!agreedToTerms) {
+      setError('You must agree to the Terms of Use and Privacy Policy to create a rider account.');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -89,6 +94,7 @@ export default function RiderSignup() {
           ...form,
           latitude:  coords?.latitude  ?? null,
           longitude: coords?.longitude ?? null,
+          agreed_to_terms: agreedToTerms,
         }),
       });
       const data = await res.json();
@@ -233,6 +239,31 @@ export default function RiderSignup() {
                 </label>
                 <input type="text" value={form.vehicle_plate} onChange={e => set('vehicle_plate', e.target.value.toUpperCase())}
                   placeholder="e.g. LAG-123-AB" className={`${inputCls} font-mono`} />
+              </div>
+
+              <div className="flex items-start gap-3 pt-2">
+                <input
+                  id="rider-agree-terms"
+                  type="checkbox"
+                  required
+                  checked={agreedToTerms}
+                  onChange={e => {
+                    setAgreedToTerms(e.target.checked);
+                    if (e.target.checked) setError('');
+                  }}
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer accent-green-600 flex-shrink-0"
+                />
+                <label htmlFor="rider-agree-terms" className="text-xs text-gray-600 leading-relaxed cursor-pointer select-none">
+                  I agree to the company&apos;s{' '}
+                  <Link href="/terms" target="_blank" rel="noopener noreferrer" className="font-bold text-green-600 hover:underline">
+                    Terms of Use
+                  </Link>{' '}
+                  and{' '}
+                  <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="font-bold text-green-600 hover:underline">
+                    Privacy Policy
+                  </Link>
+                  .
+                </label>
               </div>
 
               <div className="flex gap-3 mt-2">
