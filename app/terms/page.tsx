@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 // ── Change these if anything below is not right for your business ──────────
 const EMAIL = 'drovoapp@gmail.com';
 const COMPANY = 'Drovo, operated by WealthyRealmint';   // use your registered company name
-const UPDATED = '25 October 2026';
+const UPDATED = '2 November 2026';
 const VENDOR_COMMISSION = '12%';                         // Drovo’s cut of the item subtotal
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -19,6 +19,9 @@ const mail = (
   <a className="font-bold text-orange-600 hover:underline" href={`mailto:${EMAIL}`}>{EMAIL}</a>
 );
 const strong = (t: string) => <strong className="text-gray-800">{t}</strong>;
+const jump = (href: string, text: string) => (
+  <a className="font-bold text-orange-600 hover:underline" href={href}>{text}</a>
+);
 
 /** A small card used in the “what is not allowed” lists */
 function Rule({ title, items }: { title: string; items: string[] }) {
@@ -193,6 +196,111 @@ const sections: LegalSection[] = [
           'Cash-on-delivery money belongs to Drovo and the vendor. You must pay it back to Drovo as the app asks, and we may deduct what you owe from your earnings or restrict your account until it’s settled.',
           'You may decline or release a job in line with the app’s rules, but please do it early and don’t leave an order stuck.',
         ]} />
+      </>
+    ),
+  },
+  {
+    id: 'shipping',
+    title: 'Shipping and delivery policy',
+    body: (
+      <>
+        <P>
+          This section explains how orders get from a vendor to your door: how fast, how far, what it costs, and what happens
+          when something doesn’t go to plan. It sits alongside the rest of our Terms of Use, so please read it together with{' '}
+          {jump('#delivery', 'Delivery and riders')} and{' '}
+          {jump('#cancellations', 'Cancellations, refunds and problems with an order')}.
+        </P>
+
+        <H3>Who delivers your order</H3>
+        <P>
+          Orders on Drovo are delivered by independent delivery riders who work with us. The vendor prepares and packs your
+          order, and the rider picks it up and brings it to the address you gave. We only deliver within Nigeria at the moment,
+          and we don’t ship internationally.
+        </P>
+
+        <H3>What we deliver, and what we don’t</H3>
+        <UL items={[
+          <>{strong('Food and fashion orders')} are delivered to the address you enter at checkout.</>,
+          <>{strong('Property listings aren’t shipped.')} For real estate, you request a viewing and the owner or agent arranges it with you. No delivery fee applies.</>,
+          <>Anything on our {jump('#prohibited-items', 'prohibited items list')} can’t be delivered, and a rider may refuse to carry an order they believe breaks those rules.</>,
+        ]} />
+
+        <H3>Where we deliver</H3>
+        <P>
+          We deliver in the areas our vendors and riders cover. At checkout you pin your location on the map, and we match you
+          with online riders near the vendor. If no rider is available near your vendor at that moment, you can still place your
+          order and we’ll assign one as soon as one comes online. If your address is outside what a vendor or rider can cover,
+          we’ll tell you before you pay, or contact you straight after.
+        </P>
+
+        <H3>Delivery fees</H3>
+        <P>
+          Your delivery fee depends on the distance between the vendor and your pinned location, so closer orders cost less. The
+          fee is shown at checkout {strong('before')} you pay, and the total you see is the total you’re charged. Real estate
+          viewings have no delivery fee. If a vendor sets their own delivery fee, you’ll see it at checkout in the same way.
+        </P>
+
+        <H3>How long delivery takes</H3>
+        <UL items={[
+          <>{strong('Food orders:')} timing depends on how long the vendor needs to prepare your meal, plus the ride to you. Once a rider picks up your order, you’ll usually receive it in around 20 to 40 minutes, depending on distance and traffic.</>,
+          <>{strong('Fashion orders:')} vendors need time to confirm, pack and hand over items. Orders within the same city are usually delivered within 1 to 3 working days. Deliveries between cities can take a little longer, and the vendor will tell you if so.</>,
+        ]} />
+        <P>
+          These are estimates, not guarantees. Heavy traffic, bad weather, road closures, power cuts and busy periods can slow
+          things down, and we can’t control all of those. If your order is running late, you can see its status in the app and
+          contact us.
+        </P>
+
+        <H3>Tracking your order</H3>
+        <P>
+          You can follow your order from your orders page in the app. You’ll see when the vendor accepts it, when a rider picks it
+          up, when it’s on the way, and when it’s delivered. Please keep your phone close, as the rider may call you when they
+          arrive.
+        </P>
+
+        <H3>Getting your delivery right</H3>
+        <P>Most delivery problems come down to a wrong address or a missed call, so please:</P>
+        <UL items={[
+          'Check your delivery address and phone number before you confirm. Drop your pin as accurately as you can, and add details like a flat number, gate code or landmark in the delivery note.',
+          'Make sure someone can receive the order at the address you gave.',
+          'Answer your phone when the rider calls. If a rider can’t reach you or can’t deliver after a reasonable wait, the order may be closed. Because the order was made correctly but couldn’t be completed, you may not be entitled to a refund in that case.',
+        ]} />
+
+        <H3>When your order arrives</H3>
+        <P>
+          Please check your order as soon as it arrives and confirm in the app that you received it. Confirming lets the rider be
+          paid. If something is missing, wrong, damaged or unsafe, tell us before you confirm, or straight after, and keep the
+          packaging and any photos that show the problem.
+        </P>
+
+        <H3>If your order is late, lost, damaged or wrong</H3>
+        <UL items={[
+          <>{strong('Late:')} contact us through the app or at {mail} and we’ll check with the vendor and rider and update you.</>,
+          <>{strong('Not delivered, or lost on the way:')} we’ll look into it with the vendor and rider and, where it’s right to, refund you in full.</>,
+          <>{strong('Damaged, wrong or not as described:')} report it as soon as you can with your order number and a photo, and we’ll work out a fair outcome, which may be a partial or full refund.</>,
+          <>{strong('If a vendor cancels')} an order you’ve already paid for, you’re refunded in full.</>,
+        ]} />
+        <P>
+          Refunds go back to the way you paid, and how quickly the money appears depends on your bank and payment processor. This
+          can take a few working days. The full rules are in {jump('#cancellations', 'Cancellations, refunds and problems with an order')}.
+        </P>
+
+        <H3>Cash on delivery</H3>
+        <P>
+          Where cash on delivery is offered, you pay the rider when your order arrives. Please have the exact amount ready. The
+          money belongs to Drovo and the vendor, not the rider. If you can’t pay on arrival, the order may be closed.
+        </P>
+
+        <H3>Risk and ownership</H3>
+        <P>
+          You become responsible for your order once it is handed to you, or to someone at your address who accepts it for you.
+          Until then, the vendor and rider are responsible for getting it to you safely.
+        </P>
+
+        <Note>
+          Not sure what’s happening with a delivery? Write to {mail} or report it from your orders page in the app, and include
+          your order number so we can find it quickly. A real person will reply.
+        </Note>
       </>
     ),
   },

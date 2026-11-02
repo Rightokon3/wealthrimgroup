@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 };
 
 // ── Change these if anything below is not right for your business ──────────
-const EMAIL = 'drovo@gmail.com';
+const EMAIL = 'drovoapp@gmail.com';
 const COMPANY = 'Drovo, operated by WealthyRealmint';   // use your registered company name
 const LOCATION = 'Lagos, Nigeria';
 const UPDATED = '25 October 2026';
