@@ -53,6 +53,10 @@ export async function POST(req: NextRequest) {
     if (status && status >= 500) {
       return NextResponse.json({ error: 'Login is temporarily unavailable. Try again shortly.' }, { status: 503 });
     }
+    // Deactivated by an admin: say so clearly and do not count it as a wrong password.
+    if (/banned/i.test(error?.message ?? '')) {
+      return NextResponse.json({ error: 'This account has been deactivated. Please contact support.', code: 'account_deactivated' }, { status: 403 });
+    }
     // A real "email not confirmed" message is useful and is not a guess, so show it and do not count it.
     if (/not confirmed/i.test(error?.message ?? '')) {
       return NextResponse.json({ error: 'Please verify your email first.', code: 'email_not_confirmed' }, { status: 403 });
