@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { motion } from 'framer-motion';
-import { X, Upload, Plus, CheckCircle, AlertCircle, Utensils, Shirt, Home, Flame } from 'lucide-react';
+import { X, Upload, Plus, CheckCircle, AlertCircle, Utensils, Shirt, Flame } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Store, ProductCategory, StoreCategory } from '@/types';
@@ -13,7 +13,6 @@ import { Suspense } from 'react';
 interface ProductForm {
   name: string; description: string; price: number;
   category_id: string; is_available: boolean; is_featured: boolean;
-  property_type: string; bedrooms: number; bathrooms: number; area_sqm: number;
   sizes: string; colors: string;
 }
 
@@ -70,10 +69,6 @@ async function loadStore() {
           category_id:   prod.category_id ?? '',
           is_available:  prod.is_available,
           is_featured:   prod.is_featured,
-          property_type: prod.property_type ?? '',
-          bedrooms:      prod.bedrooms ?? 0,
-          bathrooms:     prod.bathrooms ?? 0,
-          area_sqm:      prod.area_sqm ?? 0,
           sizes:         (prod.sizes ?? []).join(', '),
           colors:        (prod.colors ?? []).join(', '),
         });
@@ -123,10 +118,6 @@ async function loadStore() {
         is_featured:   data.is_featured,
         image_url:     imageUrl,
         images:        galleryUrls,
-        property_type: store.category === 'real_estate' ? data.property_type || null : null,
-        bedrooms:      store.category === 'real_estate' ? +data.bedrooms || null : null,
-        bathrooms:     store.category === 'real_estate' ? +data.bathrooms || null : null,
-        area_sqm:      store.category === 'real_estate' ? +data.area_sqm || null : null,
         sizes:         store.category === 'fashion' ? data.sizes?.split(',').map(s=>s.trim()).filter(Boolean) : [],
         colors:        store.category === 'fashion' ? data.colors?.split(',').map(c=>c.trim()).filter(Boolean) : [],
       };
@@ -156,7 +147,7 @@ async function loadStore() {
     }
   };
 
-  const catLabel = (cat: StoreCategory) => cat === 'food' ? 'Food Item' : cat === 'fashion' ? 'Product' : 'Property';
+  const catLabel = (cat: StoreCategory) => cat === 'food' ? 'Food Item' : 'Product';
 
   if (authLoading || !store) return (
     <div className="min-h-screen pt-[64px] flex items-center justify-center">
@@ -204,24 +195,22 @@ async function loadStore() {
             <h2 className="font-black text-gray-900 flex items-center gap-2">
               {store.category === 'food'
                 ? <><Utensils className="w-5 h-5 text-orange-500" /> Food Item Details</>
-                : store.category === 'fashion'
-                  ? <><Shirt className="w-5 h-5 text-orange-500" /> Product Details</>
-                  : <><Home className="w-5 h-5 text-orange-500" /> Property Details</>}
+                : <><Shirt className="w-5 h-5 text-orange-500" /> Product Details</>}
             </h2>
 
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
-                {store.category === 'food' ? 'Item Name' : store.category === 'fashion' ? 'Product Name' : 'Property Title'} *
+                {store.category === 'food' ? 'Item Name' : 'Product Name'} *
               </label>
               <input {...register('name', { required: 'Required' })} type="text" className={ic}
-                placeholder={store.category === 'food' ? 'e.g. Jollof Rice & Chicken' : store.category === 'fashion' ? 'e.g. Ankara Wrap Dress' : 'e.g. 3 Bedroom Flat, Lekki Phase 1'} />
+                placeholder={store.category === 'food' ? 'e.g. Jollof Rice & Chicken' : 'e.g. Ankara Wrap Dress'} />
               {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
             </div>
 
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Description</label>
               <textarea {...register('description')} rows={3} className={`${ic} resize-none`}
-                placeholder={store.category === 'food' ? 'Ingredients, portion size, spice level...' : store.category === 'fashion' ? 'Material, style, care instructions...' : 'Features, amenities, location highlights...'} />
+                placeholder={store.category === 'food' ? 'Ingredients, portion size, spice level...' : 'Material, style, care instructions...'} />
             </div>
 
             <div>
@@ -253,7 +242,7 @@ async function loadStore() {
             <h2 className="font-black text-gray-900 mb-4">Pricing</h2>
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
-                {store.category === 'real_estate' ? 'Price / Rent Amount (₦)' : 'Price (₦)'} *
+                Price (₦) *
               </label>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm">₦</span>
@@ -282,36 +271,6 @@ async function loadStore() {
             )}
           </div>
 
-          {store.category === 'real_estate' && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
-              <h2 className="font-black text-gray-900">Property Details</h2>
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Listing Type *</label>
-                <select {...register('property_type')} className={ic}>
-                  <option value="">— Select type —</option>
-                  <option value="sale">For Sale</option>
-                  <option value="rent">For Rent</option>
-                  <option value="lease">Lease</option>
-                  <option value="shortlet">Shortlet</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Bedrooms</label>
-                  <input {...register('bedrooms')} type="number" min="0" className={ic} placeholder="3" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Bathrooms</label>
-                  <input {...register('bathrooms')} type="number" min="0" className={ic} placeholder="2" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Area (m²)</label>
-                  <input {...register('area_sqm')} type="number" min="0" className={ic} placeholder="120" />
-                </div>
-              </div>
-            </div>
-          )}
-
           {store.category === 'fashion' && (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
               <h2 className="font-black text-gray-900">Variants</h2>
@@ -328,7 +287,7 @@ async function loadStore() {
 
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
             <h2 className="font-black text-gray-900">
-              {store.category === 'food' ? 'Food Photo' : store.category === 'fashion' ? 'Product Photos' : 'Property Photos'}
+              {store.category === 'food' ? 'Food Photo' : 'Product Photos'}
             </h2>
 
             <div>

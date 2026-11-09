@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   Search, MapPin, Clock, Star, ChevronRight, ShoppingCart,
-  Utensils, Home as HomeIcon, Shirt, Shield, Zap, TrendingUp,
+  Utensils, Shirt, Shield, Zap, TrendingUp,
   ArrowRight, Store as StoreIcon, Rocket,
   Bike
 } from 'lucide-react';
@@ -21,14 +21,12 @@ import SearchBar from '@/components/SearchBar';
 
 const CATEGORIES: { value: StoreCategory; icon: LucideIcon; label: string; bg: string; text: string }[] = [
   { value:'food',        icon: Utensils,  label:'Food & Delivery',  bg:'bg-orange-50 border-orange-200', text:'text-orange-700' },
-  { value:'real_estate', icon: HomeIcon,  label:'Real Estate',       bg:'bg-amber-50 border-amber-200',   text:'text-amber-700' },
   { value:'fashion',     icon: Shirt,     label:'Fashion & Fabric',  bg:'bg-rose-50 border-rose-200',     text:'text-rose-700' },
 ];
 
 // Icon shown on a store card that has no cover photo
-const CATEGORY_ICON: Record<StoreCategory, LucideIcon> = {
+const CATEGORY_ICON: Partial<Record<StoreCategory, LucideIcon>> = {
   food:        Utensils,
-  real_estate: HomeIcon,
   fashion:     Shirt,
 };
 
@@ -82,7 +80,6 @@ function StoreCard({ store }: { store: Store }) {
           </div>
           <div className={`w-full py-2 rounded-xl text-center text-xs font-black transition-all border
             ${store.category==='food'      ? 'bg-orange-50 text-orange-600 border-orange-100 group-hover:bg-orange-500 group-hover:text-white group-hover:border-orange-500'
-            : store.category==='real_estate'? 'bg-amber-50 text-amber-600 border-amber-100 group-hover:bg-amber-500 group-hover:text-white group-hover:border-amber-500'
             : 'bg-rose-50 text-rose-600 border-rose-100 group-hover:bg-rose-500 group-hover:text-white group-hover:border-rose-500'}`}>
             {meta.orderLabel}
           </div>
@@ -102,7 +99,6 @@ export default function HomePage() {
   const [activeHero, setActiveHero] = useState(0);
    const [featuredFood, setFeaturedFood] = useState<Business[]>([]);
   const [featuredFashion, setFeaturedFashion] = useState<Business[]>([]);
-  const [featuredRealEstate, setFeaturedRealEstate] = useState<Business[]>([]);
 
   const { profile } = useAuth();
   const isVendorOrAdmin = profile?.role === 'vendor' || profile?.role === 'admin';
@@ -117,14 +113,12 @@ export default function HomePage() {
 
     async function fetchFeatured() {
     try {
-      const [food, fashion, realestate] = await Promise.all([
+      const [food, fashion] = await Promise.all([
         supabase.from('businesses').select('*').eq('category', 'food_delivery').eq('is_active', true).order('rating', { ascending: false }).limit(4),
         supabase.from('businesses').select('*').eq('category', 'fashion').eq('is_active', true).order('rating', { ascending: false }).limit(4),
-        supabase.from('businesses').select('*').eq('category', 'real_estate').eq('is_active', true).order('rating', { ascending: false }).limit(4),
       ]);
       setFeaturedFood(food.data || []);
       setFeaturedFashion(fashion.data || []);
-      setFeaturedRealEstate(realestate.data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -135,7 +129,8 @@ export default function HomePage() {
 
   async function fetchStores() {
     setLoading(true);
-    let q = supabase.from('stores').select('*').eq('is_active', true).order('rating', { ascending:false });
+    // Real estate now lives on its own site, so it is never listed here.
+    let q = supabase.from('stores').select('*').eq('is_active', true).neq('category', 'real_estate').order('rating', { ascending:false });
     if (activeCat !== 'all') q = q.eq('category', activeCat);
     if (city) q = q.ilike('city', `%${city}%`);
     const { data, error } = await q.limit(24);
@@ -173,7 +168,7 @@ export default function HomePage() {
               </span>
             </h1>
             <p className="text-xl text-gray-200 max-w-2xl mx-auto mb-10">
-              Discover food, fashion & real estate from trusted local vendors. Fast delivery, verified businesses.
+              Discover food & fashion from trusted local vendors. Fast delivery, verified businesses.
             </p>
 
             {/* Search bar */}
@@ -274,10 +269,9 @@ export default function HomePage() {
         </div>
 
         {/* Stats bar */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-2 gap-4 mb-8">
           {[
             { icon: Utensils, label:'Food Vendors',  value:stores.filter(s=>s.category==='food').length },
-            { icon: HomeIcon, label:'Properties',    value:stores.filter(s=>s.category==='real_estate').length },
             { icon: Shirt,    label:'Fashion Shops', value:stores.filter(s=>s.category==='fashion').length },
           ].map(s=>(
             <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4 text-center shadow-sm">
@@ -327,7 +321,7 @@ export default function HomePage() {
   </div>
   <div className="grid md:grid-cols-3 gap-6">
     {[
-      { step:'01', icon: Search,       title:'Browse & Discover', desc:'Find food, properties and fashion from verified local vendors in your city.' },
+      { step:'01', icon: Search,       title:'Browse & Discover', desc:'Find food and fashion from verified local vendors in your city.' },
       { step:'02', icon: ShoppingCart, title:'Add & Order',       desc:'Add items to your cart and checkout with your delivery address.' },
       { step:'03', icon: Rocket,       title:'Track & Receive',   desc:'Track your order in real-time and receive it at your doorstep.' },
     ].map((s, i) => (
@@ -371,7 +365,7 @@ export default function HomePage() {
   <div className="mt-8 bg-gradient-to-r from-orange-500 to-red-600 rounded-3xl p-8 text-center text-white">
     <h2 className="text-2xl md:text-3xl font-black mb-3">Ready to start selling?</h2>
     <p className="text-orange-100 mb-6 max-w-xl mx-auto text-sm">
-      Join hundreds of vendors already selling food, properties and fashion on Drovo.
+      Join hundreds of vendors already selling food and fashion on Drovo.
     </p>
     <div className="flex flex-col sm:flex-row gap-3 justify-center">
       <Link href="/auth/signup?role=vendor"
@@ -407,7 +401,7 @@ export default function HomePage() {
         <div className="mt-8 bg-gradient-to-r from-orange-500 to-red-600 rounded-3xl p-8 text-center text-white">
           <h2 className="text-2xl md:text-3xl font-black mb-3">Ready to start selling?</h2>
           <p className="text-orange-100 mb-6 max-w-xl mx-auto text-sm">
-            Join hundreds of vendors already selling food, properties and fashion on Drovo. Set up your store in minutes.
+            Join hundreds of vendors already selling food and fashion on Drovo. Set up your store in minutes.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link href="/auth/signup?role=vendor"

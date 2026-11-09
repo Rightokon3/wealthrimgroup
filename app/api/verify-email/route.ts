@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
           <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
             <h2 style="color:#ea580c;">You're verified${profileRow?.full_name ? `, ${profileRow.full_name}` : ''}!</h2>
             <p style="color:#333; font-size:15px; line-height:1.5;">
-              Welcome to Drovo — your account is now active. Start exploring food, fashion, and real estate listings near you.
+              Welcome to Drovo — your account is now active. Start exploring food and fashion near you.
             </p>
             <a href="${baseUrl}"
                style="display:inline-block; margin: 16px 0; padding:12px 28px; background:#ea580c; color:#fff;
@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
       const title = 'Welcome to Drovo! 🎉';
       const message = profileRow.role === 'vendor'
         ? `Hi ${profileRow?.full_name ?? 'there'}, your vendor account is verified. Set up your store and start selling on Drovo today.`
-        : `Hi ${profileRow?.full_name ?? 'there'}, your account is verified. Start exploring food, fashion, and real estate near you.`;
+        : `Hi ${profileRow?.full_name ?? 'there'}, your account is verified. Start exploring food and fashion near you.`;
 
       await Promise.all([
         supabaseAdmin.from('notifications').insert({

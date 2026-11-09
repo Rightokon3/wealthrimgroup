@@ -4,6 +4,7 @@ import { Mail, Phone, MapPin, Bike, Utensils, Home, Shirt } from 'lucide-react';
 import Logo from '@/public/image/Drovo-logo-white.png';
 import Image from 'next/image';
 import { AppleIcon, GooglePlayIcon } from '@/components/icons/BrandIcons';
+import { REAL_ESTATE_URL } from '@/lib/links';
 
 // When the mobile apps are published, paste their store links here.
 // While a link is empty, the badge shows as "coming soon" and is not clickable.
@@ -14,9 +15,9 @@ const APP_LINKS = {
 
 const FOOTER_LINKS = {
   explore: [
-    { label: 'Food & Delivery',   href: '/categories/food',    icon: Utensils },
-    { label: 'Real Estate',       href: '/real-estate',        icon: Home },
-    { label: 'Fashion & Fabric',  href: '/categories/fashion', icon: Shirt },
+    { label: 'Food & Delivery',   href: '/categories/food',    icon: Utensils, external: false },
+    { label: 'Real Estate',       href: REAL_ESTATE_URL,       icon: Home,     external: true },   // opens the real estate site in a new tab
+    { label: 'Fashion & Fabric',  href: '/categories/fashion', icon: Shirt,    external: false },
   ],
   vendors: [
     { label: 'Become a Vendor',       href: '/auth/signup' },
@@ -70,7 +71,7 @@ export default function Footer() {
               <Image src={Logo} alt="Drovo Logo" className="h-[30px] w-auto object-contain" />
             </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-5 max-w-xs">
-              Africa's marketplace for food, fashion & real estate. Connecting local vendors with customers across the continent.
+              Africa's marketplace for food & fashion. Connecting local vendors with customers across the continent.
             </p>
             {/* Contact */}
             <ul className="space-y-2.5 text-sm text-gray-400">
@@ -93,11 +94,17 @@ export default function Footer() {
           <div>
             <h3 className="font-bold text-white mb-4 text-sm uppercase tracking-wider">Explore</h3>
             <ul className="space-y-2.5 text-sm text-gray-400">
-              {FOOTER_LINKS.explore.map(({ label, href, icon: Icon }) => (
+              {FOOTER_LINKS.explore.map(({ label, href, icon: Icon, external }) => (
                 <li key={href}>
-                  <Link href={href} className="inline-flex items-center gap-2 hover:text-orange-400 transition-colors">
-                    <Icon className="w-4 h-4 text-orange-500 flex-shrink-0" /> {label}
-                  </Link>
+                  {external ? (
+                    <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 hover:text-orange-400 transition-colors">
+                      <Icon className="w-4 h-4 text-orange-500 flex-shrink-0" /> {label}
+                    </a>
+                  ) : (
+                    <Link href={href} className="inline-flex items-center gap-2 hover:text-orange-400 transition-colors">
+                      <Icon className="w-4 h-4 text-orange-500 flex-shrink-0" /> {label}
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>

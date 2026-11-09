@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Package, ShoppingBag, TrendingUp, Plus, Eye,
-  Edit3, ToggleRight, ToggleLeft, Clock, CheckCircle, XCircle,
+  Edit3, ToggleRight, ToggleLeft, CheckCircle, XCircle,
   Truck, Bell, LogOut, Star, ChevronRight, Banknote, Percent,
   Store as StoreIcon, Settings as SettingsIcon, Menu, X, Wallet
 } from 'lucide-react';
@@ -371,7 +371,6 @@ export default function VendorDashboard() {
                     <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
                       <span className="font-black text-orange-600 text-sm">₦{p.price.toLocaleString()}</span>
                       {store?.category==='food'    && p.prep_time_min && <span>⏱ {p.prep_time_min} min</span>}
-                      {store?.category==='real_estate' && p.bedrooms  && <span>🛏 {p.bedrooms} bed</span>}
                       {store?.category==='fashion' && p.stock_qty!==undefined && <span>📦 Stock: {p.stock_qty}</span>}
                     </div>
                   </div>
@@ -467,11 +466,6 @@ export default function VendorDashboard() {
                     {o.delivery_type==='delivery' && (
                       <span className="text-xs text-gray-400 flex items-center gap-1 sm:ml-auto">
                         <Truck className="w-3 h-3"/> Delivery
-                      </span>
-                    )}
-                    {o.delivery_type==='viewing' && (
-                      <span className="text-xs text-gray-400 flex items-center gap-1 sm:ml-auto">
-                        <Clock className="w-3 h-3"/> Viewing
                       </span>
                     )}
                   </div>

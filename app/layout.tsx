@@ -9,8 +9,8 @@ import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration';
 const jakarta = Plus_Jakarta_Sans({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Drovo — Food, Real Estate & Fashion Marketplace',
-  description: 'Order food, browse properties, shop fashion — all from local African vendors. Fast delivery, secure payments.',
+  title: 'Drovo — Food  & Fashion Marketplace',
+  description: 'Order food,  shop fashion — all from local African vendors. Fast delivery, secure payments.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,

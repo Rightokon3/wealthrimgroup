@@ -6,7 +6,7 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useForm } from 'react-hook-form';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Store, Utensils, Shirt, Building2, MapPin, Phone, ChevronRight, CheckCircle, Upload, X, AlertCircle } from 'lucide-react';
+import { Store, Utensils, Shirt, MapPin, Phone, ChevronRight, CheckCircle, Upload, X, AlertCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import CityPicker from '@/components/CityPicker';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,7 +32,6 @@ interface SetupForm {
 const CATEGORIES = [
   { value: 'food',        label: 'Food & Delivery',   icon: Utensils,  color: 'from-orange-500 to-red-500',  desc: 'Restaurant, cafe, home cook, grocery' },
   { value: 'fashion',     label: 'Fashion & Fabric',  icon: Shirt,     color: 'from-rose-500 to-pink-600',   desc: 'Clothing, fabric, accessories, footwear' },
-  { value: 'real_estate', label: 'Real Estate',       icon: Building2, color: 'from-amber-500 to-yellow-500',desc: 'Property sales, rentals, land listings' },
 ] as const;
 
 const STEPS = ['Business Type', 'Store Details', 'Location & Contact'];
@@ -242,7 +241,7 @@ function VendorSetupInner() {
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Store Name *</label>
                   <input {...register('name', { required: 'Required' })} type="text" className={ic}
-                    placeholder={selectedCategory === 'food' ? "e.g. Mama Ngozi's Kitchen" : selectedCategory === 'fashion' ? "e.g. Adunola Collections" : "e.g. Lagos Prime Properties"} />
+                    placeholder={selectedCategory === 'food' ? "e.g. Mama Ngozi's Kitchen" : "e.g. Adunola Collections"} />
                   {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
                 </div>
 
@@ -250,7 +249,7 @@ function VendorSetupInner() {
                   <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Description *</label>
                   <textarea {...register('description', { required: 'Required', minLength: { value: 20, message: 'At least 20 characters' } })}
                     rows={4} className={`${ic} resize-none`}
-                    placeholder={selectedCategory === 'food' ? "Authentic Nigerian cuisine, jollof rice, egusi, delivery in 30 min..." : selectedCategory === 'fashion' ? "Premium ankara, aso-oke, ready-to-wear and custom designs..." : "Prime properties in Lagos and Abuja — buy, rent, lease..."} />
+                    placeholder={selectedCategory === 'food' ? "Authentic Nigerian cuisine, jollof rice, egusi, delivery in 30 min..." : "Premium ankara, aso-oke, ready-to-wear and custom designs..."} />
                   {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description.message}</p>}
                 </div>
 

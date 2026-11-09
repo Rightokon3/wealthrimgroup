@@ -13,11 +13,13 @@ import { useCart } from '@/contexts/CartContext';
 import Image from 'next/image';
 import Logo from '@/public/image/Drovo-logo-2.png';
 import NotificationBell from '@/components/NotificationBell';
+import { REAL_ESTATE_URL } from '@/lib/links';
 
 // One list for desktop AND mobile, so the two menus can never drift apart
-const NAV_LINKS = [
+// `external` links open the real estate site in a new tab
+const NAV_LINKS: { href: string; label: string; icon: any; external?: boolean }[] = [
   { href: '/categories/food',    label: 'Food',        icon: Utensils },
-  { href: '/real-estate',        label: 'Real Estate', icon: Home },
+  { href: REAL_ESTATE_URL,       label: 'Real Estate', icon: Home, external: true },
   { href: '/categories/fashion', label: 'Fashion',     icon: Shirt },
 ];
 
@@ -90,12 +92,18 @@ export default function Navigation() {
 
           {/* Category nav — desktop */}
           <div className="hidden md:flex items-center gap-1">
-            {NAV_LINKS.map(({ href, label, icon: Icon }) => (
-              <Link key={href} href={href}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 hover:bg-orange-50 hover:text-orange-700 transition-all">
-                <Icon className="w-4 h-4" /> {label}
-              </Link>
-            ))}
+            {NAV_LINKS.map(({ href, label, icon: Icon, external }) => {
+              const cls = 'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 hover:bg-orange-50 hover:text-orange-700 transition-all';
+              return external ? (
+                <a key={href} href={href} target="_blank" rel="noopener noreferrer" className={cls}>
+                  <Icon className="w-4 h-4" /> {label}
+                </a>
+              ) : (
+                <Link key={href} href={href} className={cls}>
+                  <Icon className="w-4 h-4" /> {label}
+                </Link>
+              );
+            })}
 
             {!isRider && (
               <Link href="/rider/signup"
@@ -239,12 +247,18 @@ export default function Navigation() {
               className="md:hidden absolute top-16 left-0 right-0 bg-white border-b border-orange-100 shadow-xl"
             >
               <div className="px-6 py-4 space-y-1">
-                {NAV_LINKS.map(({ href, label, icon: Icon }) => (
-                  <Link key={href} href={href} onClick={() => setMobileOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-600 hover:bg-orange-50 hover:text-orange-700 transition-all">
-                    <Icon className="w-4 h-4" /> {label}
-                  </Link>
-                ))}
+                {NAV_LINKS.map(({ href, label, icon: Icon, external }) => {
+                  const cls = 'flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-600 hover:bg-orange-50 hover:text-orange-700 transition-all';
+                  return external ? (
+                    <a key={href} href={href} target="_blank" rel="noopener noreferrer" onClick={() => setMobileOpen(false)} className={cls}>
+                      <Icon className="w-4 h-4" /> {label}
+                    </a>
+                  ) : (
+                    <Link key={href} href={href} onClick={() => setMobileOpen(false)} className={cls}>
+                      <Icon className="w-4 h-4" /> {label}
+                    </Link>
+                  );
+                })}
 
                 {!isRider && (
                   <Link href="/rider/signup" onClick={() => setMobileOpen(false)}
